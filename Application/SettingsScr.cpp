@@ -55,8 +55,14 @@ Result SettingsScr::Setup(int32_t y, int32_t height)
   }
   // Set callback
   menu.SetCallback(AppTask::GetCurrent(), this, reinterpret_cast<CallbackPtr>(ProcessMenuCallback), nullptr);
-  // Setup menu
-  menu.Setup(0, y + tabs.GetHeight(), display_drv.GetScreenW(), height - tabs.GetHeight());
+  // Setup menu - reduce height to make room for shutdown button
+  menu.Setup(0, y + tabs.GetHeight(), display_drv.GetScreenW(), height - tabs.GetHeight() - SHUTDOWN_BTN_H - 4u);
+
+  // Shutdown button - sits at the bottom of the screen
+  shutdown_btn.SetParams("SHUT DOWN", 0, y + height - SHUTDOWN_BTN_H, display_drv.GetScreenW(), SHUTDOWN_BTN_H, true);
+  shutdown_btn.SetFont(Font_12x16::GetInstance());
+  shutdown_btn.SetCallback(AppTask::GetCurrent());
+  shutdown_btn.SetColor(COLOR_WHITE);
 
   // Create and set
   UpdateStrings();
@@ -79,6 +85,12 @@ Result SettingsScr::Show()
     menu.Show(100);
   }
 
+  // Show shutdown button
+  shutdown_active = false;
+  shutdown_btn.SetString("SHUT DOWN");
+  shutdown_btn.SetColor(COLOR_WHITE);
+  shutdown_btn.Show(100);
+
   // Update string on display
   UpdateStrings();
 
@@ -99,8 +111,10 @@ Result SettingsScr::Hide()
 
   // Hide menu
   menu.Hide();
-  // Show tabs
+  // Hide tabs
   tabs.Hide();
+  // Hide shutdown button
+  shutdown_btn.Hide();
 
   // Save data into EEPROM after exit the screen
   nvm.WriteData();
@@ -114,6 +128,16 @@ Result SettingsScr::Hide()
 // *****************************************************************************
 Result SettingsScr::TimerExpired(uint32_t interval)
 {
+  // Update shutdown button color based on state
+  if(shutdown_active)
+  {
+    shutdown_btn.SetColor(COLOR_GREEN);
+  }
+  else
+  {
+    shutdown_btn.SetColor(COLOR_WHITE);
+  }
+
   // Return ok - we don't check semaphore give error, because we don't need to.
   return Result::RESULT_OK;
 }
@@ -123,8 +147,42 @@ Result SettingsScr::TimerExpired(uint32_t interval)
 // *****************************************************************************
 Result SettingsScr::ProcessCallback(const void* ptr)
 {
+  // Process shutdown button
+  if(ptr == &shutdown_btn)
+  {
+    if(!shutdown_active)
+    {
+      uint32_t id = 0u;
+      // Gain control if not already in control
+      bool was_in_control = grbl_comm.GetMpgModeRequest();
+      if(!was_in_control)
+      {
+        grbl_comm.GainControl();
+        vTaskDelay(500u / portTICK_PERIOD_MS);
+      }
+      // Turn off laser and coolants first
+      grbl_comm.SendRealTimeCmd(GrblComm::CMD_STOP);
+      grbl_comm.SendCmd("M9\r", id);
+      // Ensure PB10 is HIGH first, then pull LOW to trigger QT-PY shutdown
+      grbl_comm.SendCmd("M64 P0\r", id);
+      grbl_comm.SendCmd("M65 P0\r", id);
+      // Update button state
+      shutdown_active = true;
+      shutdown_btn.SetString("SAFE TO SHUT DOWN");
+      shutdown_btn.SetColor(COLOR_GREEN);
+    }
+    else
+    {
+      // Cancel shutdown - restore PB10 HIGH
+      uint32_t id = 0u;
+      grbl_comm.SendCmd("M64 P0\r", id);
+      shutdown_active = false;
+      shutdown_btn.SetString("SHUT DOWN");
+      shutdown_btn.SetColor(COLOR_WHITE);
+    }
+  }
   // Process tabs
-  if(ptr == &tabs)
+  else if(ptr == &tabs)
   {
     // Populate menu with global variables
     UpdateStrings();

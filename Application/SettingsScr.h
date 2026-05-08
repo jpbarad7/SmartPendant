@@ -80,6 +80,8 @@ class SettingsScr : public IScreen
   private:
     // Number of menu strings. Set to max number on tab.
     static constexpr uint32_t MENU_ITEMS = 12u;
+    // Shutdown button height
+    static constexpr uint32_t SHUTDOWN_BTN_H = 50u;
 
     // Enum with menu items
     enum
@@ -113,6 +115,11 @@ class SettingsScr : public IScreen
     Menu::MenuItem menu_items[MENU_ITEMS];
     // Menu object
     Menu menu;
+
+    // Shutdown button
+    UiButton shutdown_btn;
+    // Shutdown state flag
+    bool shutdown_active = false;
 
     // Object to change numerical parameters
     ChangeValueBox& change_box;
