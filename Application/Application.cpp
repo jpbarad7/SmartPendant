@@ -110,11 +110,8 @@ Result Application::Setup()
   // Show new screen
   scr[scr_idx]->Show();
 
-  // Auto control request, if enabled
-  if(NVM::GetInstance().GetValue(NVM::AUTO_MPG_ON_START))
-  {
-    grbl_comm.GainControl();
-  }
+  // Always start in MPG mode for laser operation
+  grbl_comm.GainControl();
 
   // All good
   return Result::RESULT_OK;

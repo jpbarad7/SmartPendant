@@ -126,7 +126,7 @@ class NVM
         // General
         2,    // TX_CONTROL
         0,    // SCREEN_INVERT
-        0,    // AUTO_MPG_ON_START
+        1,    // AUTO_MPG_ON_START
         0,    // SAVE_SCRIPT_RESULT
         // MPG
         1,    // MPG_METRIC_FEED_1: 0.001 mm
