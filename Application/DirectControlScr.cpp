@@ -353,6 +353,8 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
     uint32_t id = 0u;
     if(!fire_active)
     {
+      grbl_comm.CoolantFloodToggle(); // Exhaust on
+      grbl_comm.CoolantMistToggle();  // Air on
       grbl_comm.SendCmd("$32=0\r", id);
       grbl_comm.SendCmd("M3 S30\r", id);
       fire_active = true;
@@ -361,6 +363,8 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
     {
       grbl_comm.SendCmd("M5\r", id);
       grbl_comm.SendCmd("$32=1\r", id);
+      grbl_comm.CoolantFloodToggle(); // Exhaust off
+      grbl_comm.CoolantMistToggle();  // Air off
       fire_active = false;
     }
     if(!was_in_control) grbl_comm.ReleaseControl();

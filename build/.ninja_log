@@ -226,3 +226,7 @@
 800	1321	7999556123448808	CMakeFiles/SmartPendant.dir/Application/SettingsScr.cpp.obj	3f099835d38b73bb
 781	1956	7999556123143824	CMakeFiles/SmartPendant.dir/Application/RotaryTableScr.cpp.obj	36aa5e2683859644
 1957	3077	7999556134896695	SmartPendant	7065222b97cc684c
+14	547	7999577268360752	CMakeFiles/SmartPendant.dir/Application/DirectControlScr.cpp.obj	f86c76e1ca02c961
+548	1856	7999577273729605	SmartPendant	7065222b97cc684c
+32	546	7999580011294605	CMakeFiles/SmartPendant.dir/Application/DirectControlScr.cpp.obj	f86c76e1ca02c961
+547	1670	7999580016445661	SmartPendant	7065222b97cc684c
