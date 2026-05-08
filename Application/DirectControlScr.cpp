@@ -153,14 +153,10 @@ Result DirectControlScr::Show()
   // Exhaust fan button
   spindle_ctrl_btn.Show(100);
 
-  if(grbl_comm.IsHomingEnabled())
-  {
-    // Reinit all three Soft Buttons if we have Homing enabled
-    Application::GetInstance().InitSoftButtons(true);
-    // Fire test button
-    middle_btn.SetString("FIRE");
-    middle_btn.Show(102);
-  }
+  // Always show three soft buttons in laser mode
+  Application::GetInstance().InitSoftButtons(true);
+  middle_btn.SetString("FIRE");
+  middle_btn.Show(102);
 
   // Soft Buttons
   left_btn.Show(102);
@@ -284,6 +280,8 @@ Result DirectControlScr::TimerExpired(uint32_t interval)
   spindle_ctrl_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
   // Update laser power readback
   spindle_dw.SetNumber(grbl_comm.GetSpindleSpeed());
+  // Update FIRE button color: red when active, white when off
+  middle_btn.SetColor(fire_active ? COLOR_RED : COLOR_WHITE);
 
   // Laser power adjustment via encoder
   if(jog_val != 0)
@@ -350,8 +348,22 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
   }
   else if(ptr == &middle_btn)
   {
-    // Fire test: brief low-power pulse for focus/alignment (Stop button cancels it)
-    grbl_comm.SendCmd("M3 S30\r");
+    bool was_in_control = grbl_comm.GetMpgModeRequest();
+    if(!was_in_control) grbl_comm.GainControl();
+    uint32_t id = 0u;
+    if(!fire_active)
+    {
+      grbl_comm.SendCmd("$32=0\r", id);
+      grbl_comm.SendCmd("M3 S30\r", id);
+      fire_active = true;
+    }
+    else
+    {
+      grbl_comm.SendCmd("M5\r", id);
+      grbl_comm.SendCmd("$32=1\r", id);
+      fire_active = false;
+    }
+    if(!was_in_control) grbl_comm.ReleaseControl();
   }
   // Process change box callback
   else if(ptr == &change_box)

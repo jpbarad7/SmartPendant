@@ -87,6 +87,8 @@ class DirectControlScr : public IScreen
     char ver_txt[40u] = {0};
     // Value for speed
     int32_t jog_val = 0;
+    // Fire test state
+    bool fire_active = false;
     // Jogging values
     int32_t axis_jog_val[GrblComm::AXIS_CNT] = {0};
     // Jogging direction
