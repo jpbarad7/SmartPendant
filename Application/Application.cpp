@@ -152,32 +152,8 @@ Result Application::TimerExpired(uint32_t missed_cnt)
     mpg_btn.SetColor(grbl_comm.GetMpgMode() ? COLOR_RED : COLOR_WHITE);
   }
 
-  // If controller settings changed, we have to setup screens again to proper
-  // handling of Metric/Imperial or Mill/Lathe change
-  if(grbl_comm.IsSettingsChanged())
-  {
-    // Check controller settings
-    if(!grbl_comm.IsWorkOffsetReportEnabled())
-    {
-      // Show message box
-      msg_box.Setup("WORK OFFSET", "Controller doen't report work\noffset. Please enable it in\nthe controller settings:\n\nGeneral->Status report options\n[v] Work coordinate offset");
-      msg_box.Show(10000u);
-    }
-
-    // Hide screen
-    scr[scr_idx]->Hide();
-    // Initialize header
-    InitHeader();
-    // Setup all screens
-    for(uint32_t i = 0u; i < scr_cnt; i++)
-    {
-      scr[i]->Setup(40, status_box.GetStartY() - 40);
-    }
-    // Set index
-    scr_idx = 0u;
-    // Show first screen
-    scr[scr_idx]->Show();
-  }
+  // Drain settings changed flag - screen layout is fixed for laser mode
+  grbl_comm.IsSettingsChanged();
 
   // Call timer callback for current screen
   scr[scr_idx]->TimerExpired(TASK_TIMER_PERIOD_MS);
@@ -500,37 +476,21 @@ void Application::InitHeader()
 {
   // Hide header
   header.Hide();
-  // Pages for screens(first call to set parameters)
+  // Pages for screens (first call to set parameters)
   header.SetParams(0, 0, display_drv.GetScreenW(), 40, Header::MAX_PAGES);
-  // Screens & Captions
+  // Screens & Captions - laser mode only, mill/lathe screens removed
   scr_cnt = 0u;
-  header.SetText(scr_cnt, "MPG", Font_12x16::GetInstance());
-  header.SetImage(scr_cnt, MPG);
+  header.SetText(scr_cnt, "JPB Laser", Font_12x16::GetInstance());
   scr[scr_cnt++] = &DirectControlScr::GetInstance();
   header.SetText(scr_cnt, "OVERRIDE", Font_12x16::GetInstance());
   scr[scr_cnt++] = &OverrideCtrlScr::GetInstance();
-  header.SetText(scr_cnt, "POWER FEED", Font_12x16::GetInstance());
-  scr[scr_cnt++] = &DelayControlScr::GetInstance();
-  // Rotary Table available only for mill
-  if(grbl_comm.GetModeOfOperation() == GrblComm::MODE_OF_OPERATION_MILL)
-  {
-    header.SetText(scr_cnt, "ROTARY TABLE", Font_12x16::GetInstance());
-//    header.SetImage(scr_cnt, RotaryTable);
-    scr[scr_cnt++] = &RotaryTableScr::GetInstance();
-  }
   header.SetText(scr_cnt, "GCODE SENDER", Font_12x16::GetInstance());
   scr[scr_cnt++] = &ProgramSender::GetInstance();
   header.SetText(scr_cnt, "GCODE GENERATOR", Font_12x16::GetInstance());
   scr[scr_cnt++] = &GCodeGeneratorScr::GetInstance();
-  // Probing available only for mill
-  if(grbl_comm.GetModeOfOperation() == GrblComm::MODE_OF_OPERATION_MILL)
-  {
-    header.SetText(scr_cnt, "PROBE", Font_12x16::GetInstance());
-    scr[scr_cnt++] = &ProbeScr::GetInstance();
-  }
   header.SetText(scr_cnt, "SETTINGS", Font_12x16::GetInstance());
   scr[scr_cnt++] = &SettingsScr::GetInstance();
-  // Pages for screens(second call to resize to actual numbers of pages)
+  // Pages for screens (second call to resize to actual number of pages)
   header.SetParams(0, 0, display_drv.GetScreenW(), 40, scr_cnt);
   // Resize buttons to occupy all available space
   header.ResizeButtons();

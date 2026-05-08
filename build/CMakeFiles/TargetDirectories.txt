@@ -1,0 +1,3 @@
+C:/Users/jpbar/Documents/Code/PlatformIO/SmartPendant/build/CMakeFiles/SmartPendant.dir
+C:/Users/jpbar/Documents/Code/PlatformIO/SmartPendant/build/CMakeFiles/edit_cache.dir
+C:/Users/jpbar/Documents/Code/PlatformIO/SmartPendant/build/CMakeFiles/rebuild_cache.dir

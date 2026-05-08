@@ -76,31 +76,32 @@ Result DirectControlScr::Setup(int32_t y, int32_t height)
     scale_btn[i].SetPressed(false);
   }
   // Set third button pressed
-  scale_btn[2u].SetPressed(true);
+  scale_btn[3u].SetPressed(true);
 
-  // X button for Lathe mode to change Radius/Diameter
+  // X button - not used in laser mode but kept for compatibility
   x_mode_btn.SetParams("", BORDER_W, dw[GrblComm::AXIS_X].GetStartY(), dw[GrblComm::AXIS_X].GetStartX() - BORDER_W * 2, dw[GrblComm::AXIS_X].GetHeight(), true);
   x_mode_btn.SetCallback(AppTask::GetCurrent());
-  // X axis mode string
+  // X axis mode string - not used in laser mode
   x_mode_str.SetParams("", dw[GrblComm::AXIS_X].GetStartX() + BORDER_W*2, dw[GrblComm::AXIS_X].GetStartY() + BORDER_W*2, COLOR_WHITE, Font_8x12::GetInstance());
 
-  // Spindle speed
-  spindle_dw.SetParams(BORDER_W, y + height - window_height - BORDER_W, display_drv.GetScreenW() / 2 - BORDER_W * 3 / 2,  window_height, 5u, 0);
+  // Laser power display
+  spindle_dw.SetParams(BORDER_W, y + height - window_height - BORDER_W, display_drv.GetScreenW() / 2 - BORDER_W * 3 / 2, window_height, 5u, 0);
   spindle_dw.SetBorder(BORDER_W, COLOR_RED);
   spindle_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
   spindle_dw.SetNumber(grbl_comm.GetSpindleMinSpeed());
   spindle_dw.SetLimits(grbl_comm.GetSpindleMinSpeed(), grbl_comm.GetSpindleMaxSpeed());
-  spindle_dw.SetUnits("RPM", DataWindow::RIGHT);
+  spindle_dw.SetUnits("S", DataWindow::RIGHT);
   spindle_dw.SetCallback(AppTask::GetCurrent());
   spindle_dw.SetActive(true);
   spindle_dw.SetSelected(true);
-  spindle_name.SetParams("SPINDLE", 0, 0, COLOR_WHITE, Font_8x12::GetInstance());
+  spindle_name.SetParams("POWER", 0, 0, COLOR_WHITE, Font_8x12::GetInstance());
   spindle_name.Move(spindle_dw.GetStartX() + BORDER_W*2, spindle_dw.GetStartY() + BORDER_W*2);
 
-  // Set scale button parameters
-  spindle_dir_btn.SetParams("CW", spindle_dw.GetEndX() + 1 + BORDER_W, spindle_dw.GetStartY(), (spindle_dw.GetWidth() - BORDER_W) / 2, window_height, true);
+  // Exhaust fan button (M7/HE1)
+  spindle_dir_btn.SetParams("EXHAUST", spindle_dw.GetEndX() + 1 + BORDER_W, spindle_dw.GetStartY(), (spindle_dw.GetWidth() - BORDER_W) / 2, window_height, true);
   spindle_dir_btn.SetCallback(AppTask::GetCurrent());
-  spindle_ctrl_btn.SetParams("START", spindle_dir_btn.GetEndX() + 1 + BORDER_W, spindle_dir_btn.GetStartY(), spindle_dir_btn.GetWidth(), window_height, true);
+  // Air assist button (M8/HE0)
+  spindle_ctrl_btn.SetParams("AIR", spindle_dir_btn.GetEndX() + 1 + BORDER_W, spindle_dir_btn.GetStartY(), spindle_dir_btn.GetWidth(), window_height, true);
   spindle_ctrl_btn.SetCallback(AppTask::GetCurrent());
 
   // Create version string with oscillator frequency
@@ -110,7 +111,7 @@ Result DirectControlScr::Setup(int32_t y, int32_t height)
   snprintf(ver_txt, sizeof(ver_txt), "SmartPendant %d.%03d.%d %luMHz", VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD, crystal_freq);
 #endif
   // Version string
-  version.SetParams(ver_txt, BORDER_W, scale_btn[0].GetEndY() + (spindle_dw.GetStartY() - scale_btn[0].GetEndY() -  Font_8x12::GetInstance().GetCharH()) / 2, COLOR_WHITE, Font_8x12::GetInstance());
+  version.SetParams(ver_txt, BORDER_W, scale_btn[0].GetEndY() + (spindle_dw.GetStartY() - scale_btn[0].GetEndY() - Font_8x12::GetInstance().GetCharH()) / 2, COLOR_WHITE, Font_8x12::GetInstance());
 
   // All good
   return Result::RESULT_OK;
@@ -135,7 +136,7 @@ Result DirectControlScr::Show()
     zero_btn[i].Show(100);
   }
 
-  // Set current axis to none for prevent accidental movement
+  // Set current axis to none to prevent accidental movement
   axis = GrblComm::AXIS_CNT;
   // Set border to red for all windows
   for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
@@ -143,26 +144,21 @@ Result DirectControlScr::Show()
     dw[i].SetSelected(false);
   }
 
-  // In Lathe mode show Radius/Diameter string on top of X window and button to change it
-  if(grbl_comm.GetModeOfOperation() == GrblComm::MODE_OF_OPERATION_LATHE)
-  {
-    x_mode_str.Show(100 + 1);
-    x_mode_btn.Show(100 - 1);
-  }
-
-  // Spindle control
+  // Laser power display
   spindle_dw.Show(100);
-  spindle_dw.SetSelected(false); // Disable to reset speed override on select
+  spindle_dw.SetSelected(false);
   spindle_name.Show(101);
+  // Air assist button
   spindle_dir_btn.Show(100);
+  // Exhaust fan button
   spindle_ctrl_btn.Show(100);
 
   if(grbl_comm.IsHomingEnabled())
   {
     // Reinit all three Soft Buttons if we have Homing enabled
     Application::GetInstance().InitSoftButtons(true);
-    // Show Home button
-    middle_btn.SetString("Home");
+    // Fire test button
+    middle_btn.SetString("FIRE");
     middle_btn.Show(102);
   }
 
@@ -204,12 +200,11 @@ Result DirectControlScr::Hide()
     scale_btn[i].Hide();
   }
 
-  // Hide X button
+  // Hide X button and mode string (not used in laser mode)
   x_mode_btn.Hide();
-  // Hide X mode string
   x_mode_str.Hide();
 
-  // Spindle control
+  // Laser power / aux controls
   spindle_dw.Hide();
   spindle_name.Hide();
   spindle_dir_btn.Hide();
@@ -238,19 +233,13 @@ Result DirectControlScr::TimerExpired(uint32_t interval)
   Application::GetInstance().UpdateLeftButtonText();
   Application::GetInstance().UpdateRightButtonText();
 
-  // In Lathe mode show Radius/Diameter string on top of X window
-  if(grbl_comm.GetModeOfOperation() == GrblComm::MODE_OF_OPERATION_LATHE)
-  {
-    x_mode_str.SetString(grbl_comm.IsLatheDiameterMode() ? "Diameter" : "Radius");
-  }
-
   // Update numbers with current position
   for(uint32_t i = 0u; i < grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)); i++)
   {
     dw[i].SetNumber(grbl_comm.GetAxisPosition(i));
   }
 
-  // Update numbers with current position
+  // Process jogging
   for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
   {
     // If requested position changed
@@ -258,16 +247,9 @@ Result DirectControlScr::TimerExpired(uint32_t interval)
     {
       // Calculate distance - number of encoder clicks multiplied by click value
       int32_t distance = axis_jog_val[i] * scale;
-      // In Lathe mode we need some changes
-      if((i == GrblComm::AXIS_X) && (grbl_comm.GetModeOfOperation() == GrblComm::MODE_OF_OPERATION_LATHE))
-      {
-        // Invert X axis since clockwise rotation moves cutter to work piece(X decreased)
-        // and counterclockwise rotation moves cutter away from work piece(X increased)
-        distance = -distance;
-      }
 
-      // Feed in mm/min or deg/min(21600 deg/min is equivalent 60 rpm or 1 revolution per second)
-      uint32_t feed_x100 = (grbl_comm.IsRotaryAxis(axis) ? 21600u : 600u) * 100u; // TODO: Make it configurable?
+      // Feed in mm/min
+      uint32_t feed_x100 = (grbl_comm.IsRotaryAxis(axis) ? 21600u : 600u) * 100u;
       // If jogging direction is not changed
       if(((axis_jog_dir[i] < 0) && (axis_jog_val[i] < 0)) || ((axis_jog_dir[i] > 0) && (axis_jog_val[i] > 0)))
       {
@@ -275,22 +257,14 @@ Result DirectControlScr::TimerExpired(uint32_t interval)
         feed_x100 = InputDrv::GetInstance().GetEncoderSpeed();
         // 20 clicks per second as minimum feed
         if(feed_x100 < 20u) feed_x100 = 20u;
-        // Feed in units(1 um or 0.0001 inch depend on controller settings) per second
+        // Feed in units per second
         feed_x100 *= scale;
         // Convert feed from units/sec to units*100/min
         feed_x100 = feed_x100 * 60u / 10u;
       }
-      else // And if direction is changed
+      else
       {
-        // grblHAL uses requested feed rate to make backlash movement to
-        // guarantee that endmill never will work outside specified feed rate.
-        // During jogging feedrate can be as slow as 20 um per second(in case
-        // if 1 um step is selected). As result it will take 5 seconds to make
-        // 0.1 mm backlash movement. So, set feed to 600 mm/min when direction
-        // is changed to make quick backlash movement.
-
-        // Save direction of jog. axis_jog_val[i] can't be zero here since we
-        // already checked it above.
+        // Save direction of jog
         axis_jog_dir[i] = axis_jog_val[i] > 0 ? 1 : -1;
       }
 
@@ -304,42 +278,20 @@ Result DirectControlScr::TimerExpired(uint32_t interval)
     }
   }
 
-  // Update spindle direction button text if spindle is running
-  if(grbl_comm.IsSpindleCCW())
-  {
-    spindle_dir_btn.SetString("CCW");
-  }
-  else
-  {
-    spindle_dir_btn.SetString("CW");
-  }
+  // Update air assist button color: green when on, white when off
+  spindle_dir_btn.SetColor(grbl_comm.GetCoolantMist() ? COLOR_GREEN : COLOR_WHITE);
+  // Update exhaust fan button color: green when on, white when off
+  spindle_ctrl_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
+  // Update laser power readback
+  spindle_dw.SetNumber(grbl_comm.GetSpindleSpeed());
 
-  // Update spindle control button text
-  if(grbl_comm.IsSpindleRunning())
-  {
-    // If spindle is running - control button is stop button
-    spindle_ctrl_btn.SetString("STOP");
-    // Update current speed
-    spindle_dw.SetNumber(grbl_comm.GetSpindleSpeed());
-  }
-  else
-  {
-    // If spindle is not running - control button is start button
-    spindle_ctrl_btn.SetString("START");
-  }
-
-  // Spindle speed
+  // Laser power adjustment via encoder
   if(jog_val != 0)
   {
-    // Update speed in data window
+    // Update power in data window
     spindle_dw.SetNumber(spindle_dw.GetNumber() + jog_val * scale);
-    // clear jog value
+    // Clear jog value
     jog_val = 0;
-    // Update spindle speed if it is running
-    if(grbl_comm.IsSpindleRunning())
-    {
-      grbl_comm.SetSpindleSpeed(spindle_dw.GetNumber(), grbl_comm.IsSpindleCCW());
-    }
   }
 
   // If SmartPendant is in control and state is IDLE or JOG - enable buttons
@@ -351,28 +303,20 @@ Result DirectControlScr::TimerExpired(uint32_t interval)
     {
       zero_btn[i].Enable();
     }
-    // Enable spindle control button
+    // Enable exhaust and air assist buttons
     spindle_ctrl_btn.Enable();
-    // Spindle dir button should be disabled if spindle is running
-    if(grbl_comm.IsSpindleRunning())
-    {
-      spindle_dir_btn.Disable();
-    }
-    else
-    {
-      spindle_dir_btn.Enable();
-    }
+    spindle_dir_btn.Enable();
   }
   else
   {
     change_box.Hide();
     x_mode_btn.Disable();
-    // Enable zero buttons for all axis
+    // Disable zero buttons for all axis
     for(uint32_t i = 0u; i < NumberOf(zero_btn); i++)
     {
       zero_btn[i].Disable();
     }
-    // Disable spindle buttons
+    // Disable laser aux buttons
     spindle_ctrl_btn.Disable();
     spindle_dir_btn.Disable();
   }
@@ -406,13 +350,8 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
   }
   else if(ptr == &middle_btn)
   {
-    grbl_comm.Homing();
-  }
-  // Process X button
-  else if(ptr == &x_mode_btn)
-  {
-    // Invert mode
-    grbl_comm.IsLatheDiameterMode() ? grbl_comm.SetLatheRadiusMode() : grbl_comm.SetLatheDiameterMode();
+    // Fire test: brief low-power pulse for focus/alignment (Stop button cancels it)
+    grbl_comm.SendCmd("M3 S30\r");
   }
   // Process change box callback
   else if(ptr == &change_box)
@@ -422,27 +361,20 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
       grbl_comm.SetAxisPosition(change_box.GetId(), change_box.GetValue());
     }
   }
-  // Process spindle control button
+  // Process exhaust fan button
   else if(ptr == &spindle_ctrl_btn)
   {
-    if(grbl_comm.IsSpindleRunning())
-    {
-      grbl_comm.StopSpindle();
-    }
-    else
-    {
-      grbl_comm.SetSpindleSpeed(spindle_dw.GetNumber(), grbl_comm.IsSpindleCCW());
-    }
+    grbl_comm.CoolantFloodToggle(); // Exhaust fan (M8/M9)
   }
-  // Process spindle direction button
+  // Process air assist button
   else if(ptr == &spindle_dir_btn)
   {
-    grbl_comm.SetSpindleDirection(!grbl_comm.IsSpindleCCW());
+    grbl_comm.CoolantMistToggle(); // Air assist (M7/M9)
   }
   else
   {
     uint32_t i = 0u;
-    // Try to find button
+    // Try to find scale button
     for(; i < NumberOf(scale_btn); i++)
     {
       if(ptr == &scale_btn[i])
@@ -456,7 +388,7 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
         break;
       }
     }
-    // If previous cycle isn't found button
+    // If previous cycle didn't find button
     if(i == NumberOf(scale_btn))
     {
       // Check axis data windows
@@ -481,7 +413,7 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
           {
             dw[j].SetSelected(false);
           }
-          // Unselect spindle data window
+          // Unselect power data window
           spindle_dw.SetSelected(false);
           // Then set border to green for selected one
           dw[i].SetSelected(true);
@@ -504,10 +436,8 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
         {
           // Set speed override to 100%
           grbl_comm.SpeedReset();
-          // Set spindle speed to current value to match previous value with override
-          grbl_comm.SetSpindleSpeed(spindle_dw.GetNumber(), grbl_comm.IsSpindleCCW());
         }
-        // Select spindle data window
+        // Select power data window
         spindle_dw.SetSelected(true);
         // Not an axis
         axis = GrblComm::AXIS_CNT;
@@ -571,7 +501,7 @@ void DirectControlScr::UpdateScaleButtons()
     // Clear scale_str
     memset(scale_str[i], 0, NumberOf(scale_str[i]));
 
-    // Check if it axis or spindle
+    // Check if it axis or laser power
     if(axis < GrblComm::AXIS_CNT)
     {
       // Find appropriate scale settings
@@ -583,15 +513,13 @@ void DirectControlScr::UpdateScaleButtons()
       // Create scale for the button
       grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]), scale_val[i], grbl_comm.GetReportUnitsScaler(axis), grbl_comm.GetReportUnits(axis), grbl_comm.IsRotaryAxis(axis));
     }
-    else // Spindle RPM
+    else // Laser power S value
     {
-      // Get scale
       scale_val[i] = (i == 0u) ? 1u : scale_val[i - 1u] * 10u;
-      // Create scale for the button
-      grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]), scale_val[i], 1, "rpm");
+      grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]), scale_val[i], 1, "S");
     }
 
-    // Replace space to new line between scale and units
+    // Replace space with new line between scale and units
     for(uint8_t j = 0; j < NumberOf(scale_str[i]); j++)
     {
       if(scale_str[i][j] == ' ')

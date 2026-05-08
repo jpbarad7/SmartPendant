@@ -88,6 +88,7 @@ extern "C" void AppMain(void)
 
   // Init NVM
   NVM::GetInstance().Init(eep);
+  
   // Init Display Driver Task
   DisplayDrv::GetInstance().InitTask(display, touch);
   // Init sound task

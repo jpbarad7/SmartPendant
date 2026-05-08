@@ -39,15 +39,12 @@ Result OverrideCtrlScr::Setup(int32_t y, int32_t height)
   // Data window height
   uint32_t window_height = Font_8x12::GetInstance().GetCharH() * 5u;
 
-  // Start position for Feed Data Window: border, names, data window, two borders
+  // Start position for Feed Data Window
   int32_t start_y = y + BORDER_W + Font_10x18::GetInstance().GetCharH() + BORDER_W + (Font_10x18::GetInstance().GetCharH() + Font_6x8::GetInstance().GetCharH()*2 + BORDER_W);
-  // If there more than 3 axis, we need second row
-//  if(grbl_comm.GetNumberOfAxis() > 3) start_y *= 2;
-  // Add gap between data windows and Feed & Speed
   start_y += BORDER_W*2;
 
   // Feed override
-  feed_dw.SetParams(display_drv.GetScreenW() / 4, start_y, (display_drv.GetScreenW() - display_drv.GetScreenW() / 4 - BORDER_W) / 2,  window_height, 3u, 0u);
+  feed_dw.SetParams(display_drv.GetScreenW() / 4, start_y, (display_drv.GetScreenW() - display_drv.GetScreenW() / 4 - BORDER_W) / 2, window_height, 3u, 0u);
   feed_dw.SetBorder(BORDER_W, COLOR_RED);
   feed_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
   feed_dw.SetNumber(0);
@@ -56,11 +53,11 @@ Result OverrideCtrlScr::Setup(int32_t y, int32_t height)
   feed_dw.SetActive(true);
   feed_name.SetParams("FEED:", 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
   feed_name.Move((feed_dw.GetStartX() / 2) - (feed_name.GetWidth() / 2), (feed_dw.GetStartY() + feed_dw.GetHeight() / 2) - (feed_name.GetHeight() / 2));
-  // Set/Zero button
+  // Reset button
   feed_reset_btn.SetParams("100%", feed_dw.GetEndX() + BORDER_W, feed_dw.GetStartY(), display_drv.GetScreenW() - feed_dw.GetEndX() - BORDER_W * 2, feed_dw.GetHeight(), true);
   feed_reset_btn.SetCallback(AppTask::GetCurrent());
 
-  // Speed override
+  // Laser power override
   speed_dw.SetParams(feed_dw.GetStartX(), feed_dw.GetEndY() + BORDER_W*2, feed_dw.GetWidth(), feed_dw.GetHeight(), 3u, 0u);
   speed_dw.SetBorder(BORDER_W, COLOR_RED);
   speed_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
@@ -68,18 +65,18 @@ Result OverrideCtrlScr::Setup(int32_t y, int32_t height)
   speed_dw.SetUnits("%", DataWindow::RIGHT);
   speed_dw.SetCallback(AppTask::GetCurrent());
   speed_dw.SetActive(true);
-  speed_name.SetParams("SPEED:", 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
+  speed_name.SetParams("POWER:", 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
   speed_name.Move((speed_dw.GetStartX() / 2) - (speed_name.GetWidth() / 2), (speed_dw.GetStartY() + speed_dw.GetHeight() / 2) - (speed_name.GetHeight() / 2));
-  // Set/Zero button
+  // Reset button
   speed_reset_btn.SetParams("100%", speed_dw.GetEndX() + BORDER_W, speed_dw.GetStartY(), display_drv.GetScreenW() - speed_dw.GetEndX() - BORDER_W * 2, speed_dw.GetHeight(), true);
   speed_reset_btn.SetCallback(AppTask::GetCurrent());
 
-  // Buttons for control flood coolant
-  flood_btn.SetParams("FLOOD", BORDER_W, speed_dw.GetEndY() + BORDER_W*2, display_drv.GetScreenW() / 2 - BORDER_W*2, speed_dw.GetHeight(), true);
+  // Exhaust fan button (flood coolant repurposed)
+  flood_btn.SetParams("AIR", BORDER_W, speed_dw.GetEndY() + BORDER_W*2, display_drv.GetScreenW() / 2 - BORDER_W*2, speed_dw.GetHeight(), true);
   flood_btn.SetFont(Font_12x16::GetInstance());
   flood_btn.SetCallback(AppTask::GetCurrent());
-  // Buttons for control mist coolant
-  mist_btn.SetParams("MIST", display_drv.GetScreenW() / 2 + BORDER_W, speed_dw.GetEndY() + BORDER_W*2, display_drv.GetScreenW() / 2 - BORDER_W*2, speed_dw.GetHeight(), true);
+  // Air assist button (mist coolant repurposed)
+  mist_btn.SetParams("EXHAUST", display_drv.GetScreenW() / 2 + BORDER_W, speed_dw.GetEndY() + BORDER_W*2, display_drv.GetScreenW() / 2 - BORDER_W*2, speed_dw.GetHeight(), true);
   mist_btn.SetFont(Font_12x16::GetInstance());
   mist_btn.SetCallback(AppTask::GetCurrent());
 
@@ -116,12 +113,12 @@ Result OverrideCtrlScr::Show()
   feed_name.Show(100);
   feed_reset_btn.Show(100);
 
-  // Speed objects
+  // Power override objects
   speed_dw.Show(100);
   speed_name.Show(100);
   speed_reset_btn.Show(100);
 
-  // Coolant buttons
+  // Exhaust and air assist buttons
   flood_btn.Show(100);
   mist_btn.Show(100);
 
@@ -157,18 +154,18 @@ Result OverrideCtrlScr::Hide()
   feed_name.Hide();
   feed_reset_btn.Hide();
 
-  // Speed objects
+  // Power override objects
   speed_dw.Hide();
   speed_name.Hide();
   speed_reset_btn.Hide();
 
-  // Coolant buttons
+  // Exhaust and air assist buttons
   flood_btn.Hide();
   mist_btn.Hide();
 
-  // Go button
+  // Run button
   left_btn.Hide();
-  // Reset button
+  // Stop button
   right_btn.Hide();
 
   // All good
@@ -190,7 +187,7 @@ Result OverrideCtrlScr::TimerExpired(uint32_t interval)
   feed_dw.SetNumber(grbl_comm.GetFeedOverride());
   speed_dw.SetNumber(grbl_comm.GetSpeedOverride());
 
-  // Set coolant state
+  // Update exhaust and air assist button colors
   flood_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
   mist_btn.SetColor(grbl_comm.GetCoolantMist() ? COLOR_GREEN : COLOR_WHITE);
 
@@ -226,7 +223,7 @@ Result OverrideCtrlScr::TimerExpired(uint32_t interval)
     ; // Do nothing
   }
 
-  // Update speed if necessary. One step at a timer tick.
+  // Update power override if necessary. One step at a timer tick.
   if(speed_val > 0)
   {
     if(speed_val > 10)
@@ -289,11 +286,11 @@ Result OverrideCtrlScr::ProcessCallback(const void* ptr)
   }
   else if(ptr == &flood_btn)
   {
-    grbl_comm.CoolantFloodToggle();
+    grbl_comm.CoolantFloodToggle(); // Exhaust fan
   }
   else if(ptr == &mist_btn)
   {
-    grbl_comm.CoolantMistToggle();
+    grbl_comm.CoolantMistToggle(); // Air assist
   }
   else
   {

@@ -63,6 +63,8 @@ Result GrblComm::InitTask(StHalUart& uart_in)
 // *****************************************************************************
 Result GrblComm::Setup()
 {
+  // Wait for controller to boot before initializing communication
+  vTaskDelay(8000u / portTICK_PERIOD_MS);
   // Init UART
   uart->Init();
   // Clear all received data to this point
