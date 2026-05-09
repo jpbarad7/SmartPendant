@@ -188,6 +188,8 @@ class Application : public AppTask
 
     void HideGlobalUI();
     void ShowGlobalUI();
+    void HideBottomBar();
+    void ShowBottomBar();
     void NextScreen();
     void PrevScreen();
 

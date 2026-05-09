@@ -1,29 +1,16 @@
 //******************************************************************************
 //  @file OverrideCtrlScr.cpp
-//  @author Nicolai Shlapunov
+//  @author Nicolai Shlapunov / JPB Laser modifications
 //
-//  @details OverrideCtrlScr: User OverrideCtrlScr Class, implementation
-//
-//  @copyright Copyright (c) 2023, Devtronic & Nicolai Shlapunov
-//             All rights reserved.
-//
-//  @section SUPPORT
-//
-//   Devtronic invests time and resources providing this open source code,
-//   please support Devtronic and open-source hardware/software by
-//   donations and/or purchasing products from Devtronic.
+//  @details OverrideCtrlScr: Full-screen self-contained layout.
+//           Nav bar matches home screen. Content centered between nav and
+//           bottom section. Bottom buttons match home screen text size.
 //
 //******************************************************************************
 
-// *****************************************************************************
-// ***   Includes   ************************************************************
-// *****************************************************************************
 #include "OverrideCtrlScr.h"
-
 #include "Application.h"
 
-// *****************************************************************************
-// ***   Get Instance   ********************************************************
 // *****************************************************************************
 OverrideCtrlScr& OverrideCtrlScr::GetInstance()
 {
@@ -32,19 +19,100 @@ OverrideCtrlScr& OverrideCtrlScr::GetInstance()
 }
 
 // *****************************************************************************
-// ***   OverrideCtrlScr Setup   ***********************************************
+// ***   Setup   ***************************************************************
 // *****************************************************************************
 Result OverrideCtrlScr::Setup(int32_t y, int32_t height)
 {
-  // Data window height
-  uint32_t window_height = Font_8x12::GetInstance().GetCharH() * 5u;
+  int32_t  scr_w         = display_drv.GetScreenW(); // 320
+  int32_t  scr_h         = display_drv.GetScreenH(); // 480
+  uint32_t window_height = Font_8x12::GetInstance().GetCharH() * 5u; // 60px
 
-  // Start position for Feed Data Window
-  int32_t start_y = y + BORDER_W + Font_10x18::GetInstance().GetCharH() + BORDER_W + (Font_10x18::GetInstance().GetCharH() + Font_6x8::GetInstance().GetCharH()*2 + BORDER_W);
-  start_y += BORDER_W*2;
+  // *** Nav bar — identical dimensions to home screen ***
+  int32_t dro_start_x = scr_w / 6;
+  int32_t dro_end_x   = dro_start_x + (scr_w - BORDER_W * 2) * 4 / 6;
+  int32_t arrow_w     = scr_w - dro_end_x - BORDER_W * 2; // 51px
 
-  // Feed override
-  feed_dw.SetParams(display_drv.GetScreenW() / 4, start_y, (display_drv.GetScreenW() - display_drv.GetScreenW() / 4 - BORDER_W) / 2, window_height, 3u, 0u);
+  // Vertical centering — same formula as home screen (7 rows + gaps)
+  int32_t total_h = 7 * (int32_t)window_height + 7 * BORDER_W + BORDER_W * 2; // 456
+  int32_t nav_y   = (scr_h - total_h) / 2; // = 12
+  int32_t nav_end = nav_y + (int32_t)window_height;
+
+  prev_btn.SetParams("<", BORDER_W, nav_y, arrow_w, window_height, true);
+  prev_btn.SetCallback(AppTask::GetCurrent());
+
+  next_btn.SetParams(">", scr_w - BORDER_W - arrow_w, nav_y, arrow_w, window_height, true);
+  next_btn.SetCallback(AppTask::GetCurrent());
+
+  title_str.SetParams("OVERRIDE", 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
+  title_str.Move((scr_w - title_str.GetWidth()) / 2,
+                 nav_y + ((int32_t)window_height - Font_12x16::GetInstance().GetCharH()) / 2);
+
+  // *** Bottom section — fixed at screen bottom ***
+  int32_t run_stop_y = nav_y + total_h - (int32_t)window_height;
+  int32_t aux_y      = run_stop_y - BORDER_W - (int32_t)window_height;
+  int32_t status_y   = aux_y - BORDER_W - (int32_t)window_height;
+
+  // *** Status strings ***
+  hdr_state.SetParams("-----", BORDER_W,
+                      status_y + ((int32_t)window_height - Font_12x16::GetInstance().GetCharH()) / 2,
+                      COLOR_WHITE, Font_12x16::GetInstance());
+  hdr_status_sub.SetParams("", BORDER_W,
+                            status_y + (int32_t)window_height - Font_8x12::GetInstance().GetCharH() - BORDER_W / 2,
+                            COLOR_WHITE, Font_8x12::GetInstance());
+
+  // *** Aux row: 4 equal buttons matching home screen ***
+  uint32_t aux_btn_w = ((uint32_t)scr_w - BORDER_W * 5u) / 4u; // 75px
+
+  flood_btn.SetParams("AIR", BORDER_W, aux_y, aux_btn_w, window_height, true);
+  flood_btn.SetCallback(AppTask::GetCurrent());
+
+  mist_btn.SetParams("EXHAUST", BORDER_W + (int32_t)aux_btn_w + BORDER_W,
+                     aux_y, aux_btn_w, window_height, true);
+  mist_btn.SetCallback(AppTask::GetCurrent());
+
+  fire_ovr_btn.SetParams("FIRE", BORDER_W + 2 * ((int32_t)aux_btn_w + BORDER_W),
+                          aux_y, aux_btn_w, window_height, true);
+  fire_ovr_btn.SetCallback(AppTask::GetCurrent());
+
+  mpg_ovr_btn.SetParams("MPG", BORDER_W + 3 * ((int32_t)aux_btn_w + BORDER_W),
+                         aux_y, aux_btn_w, window_height, true);
+  mpg_ovr_btn.SetCallback(AppTask::GetCurrent());
+
+  // *** Run / Stop — larger font, uppercase, same width as home screen ***
+  int32_t run_stop_w = 2 * (int32_t)aux_btn_w + BORDER_W; // 154px
+
+  run_btn.SetParams("RUN", BORDER_W, run_stop_y, run_stop_w, window_height, true);
+  run_btn.SetFont(Font_12x16::GetInstance());
+  run_btn.SetCallback(AppTask::GetCurrent());
+
+  stop_btn.SetParams("STOP", BORDER_W + run_stop_w + BORDER_W, run_stop_y,
+                     run_stop_w, window_height, true);
+  stop_btn.SetFont(Font_12x16::GetInstance());
+  stop_btn.SetCallback(AppTask::GetCurrent());
+
+  // *** Content: centered between nav_end and status_y ***
+  // Axis DRO height — slightly taller than default
+  axis_dro_h = Font_10x18::GetInstance().GetCharH()
+               + Font_6x8::GetInstance().GetCharH() * 2
+               + BORDER_W + 12; // ~50px
+
+  int32_t name_h         = Font_10x18::GetInstance().GetCharH(); // 18
+  int32_t axis_section_h = name_h + BORDER_W + axis_dro_h;
+  int32_t content_h      = axis_section_h
+                           + BORDER_W * 3
+                           + (int32_t)window_height
+                           + BORDER_W * 2
+                           + (int32_t)window_height;
+  int32_t available      = status_y - nav_end;
+  int32_t padding        = (available - content_h) / 2;
+  content_start          = nav_end + padding + BORDER_W * 2;
+  axis_dro_y             = content_start + BORDER_W + name_h;
+  int32_t axis_dro_end   = axis_dro_y + axis_dro_h;
+  int32_t feed_start_y   = axis_dro_end + BORDER_W * 3;
+
+  // *** Feed override ***
+  feed_dw.SetParams(scr_w / 4, feed_start_y,
+                    (scr_w - scr_w / 4 - BORDER_W) / 2, window_height, 3u, 0u);
   feed_dw.SetBorder(BORDER_W, COLOR_RED);
   feed_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
   feed_dw.SetNumber(0);
@@ -52,13 +120,15 @@ Result OverrideCtrlScr::Setup(int32_t y, int32_t height)
   feed_dw.SetCallback(AppTask::GetCurrent());
   feed_dw.SetActive(true);
   feed_name.SetParams("FEED:", 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
-  feed_name.Move((feed_dw.GetStartX() / 2) - (feed_name.GetWidth() / 2), (feed_dw.GetStartY() + feed_dw.GetHeight() / 2) - (feed_name.GetHeight() / 2));
-  // Reset button
-  feed_reset_btn.SetParams("100%", feed_dw.GetEndX() + BORDER_W, feed_dw.GetStartY(), display_drv.GetScreenW() - feed_dw.GetEndX() - BORDER_W * 2, feed_dw.GetHeight(), true);
+  feed_name.Move((feed_dw.GetStartX() / 2) - (feed_name.GetWidth() / 2),
+                 (feed_dw.GetStartY() + (int32_t)feed_dw.GetHeight() / 2) - (feed_name.GetHeight() / 2));
+  feed_reset_btn.SetParams("100%", feed_dw.GetEndX() + BORDER_W, feed_dw.GetStartY(),
+                            scr_w - feed_dw.GetEndX() - BORDER_W * 2, feed_dw.GetHeight(), true);
   feed_reset_btn.SetCallback(AppTask::GetCurrent());
 
-  // Laser power override
-  speed_dw.SetParams(feed_dw.GetStartX(), feed_dw.GetEndY() + BORDER_W*2, feed_dw.GetWidth(), feed_dw.GetHeight(), 3u, 0u);
+  // *** Power override ***
+  speed_dw.SetParams(feed_dw.GetStartX(), feed_dw.GetEndY() + BORDER_W * 2,
+                     feed_dw.GetWidth(), feed_dw.GetHeight(), 3u, 0u);
   speed_dw.SetBorder(BORDER_W, COLOR_RED);
   speed_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
   speed_dw.SetNumber(0);
@@ -66,21 +136,12 @@ Result OverrideCtrlScr::Setup(int32_t y, int32_t height)
   speed_dw.SetCallback(AppTask::GetCurrent());
   speed_dw.SetActive(true);
   speed_name.SetParams("POWER:", 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
-  speed_name.Move((speed_dw.GetStartX() / 2) - (speed_name.GetWidth() / 2), (speed_dw.GetStartY() + speed_dw.GetHeight() / 2) - (speed_name.GetHeight() / 2));
-  // Reset button
-  speed_reset_btn.SetParams("100%", speed_dw.GetEndX() + BORDER_W, speed_dw.GetStartY(), display_drv.GetScreenW() - speed_dw.GetEndX() - BORDER_W * 2, speed_dw.GetHeight(), true);
+  speed_name.Move((speed_dw.GetStartX() / 2) - (speed_name.GetWidth() / 2),
+                  (speed_dw.GetStartY() + (int32_t)speed_dw.GetHeight() / 2) - (speed_name.GetHeight() / 2));
+  speed_reset_btn.SetParams("100%", speed_dw.GetEndX() + BORDER_W, speed_dw.GetStartY(),
+                             scr_w - speed_dw.GetEndX() - BORDER_W * 2, speed_dw.GetHeight(), true);
   speed_reset_btn.SetCallback(AppTask::GetCurrent());
 
-  // Exhaust fan button (flood coolant repurposed)
-  flood_btn.SetParams("AIR", BORDER_W, speed_dw.GetEndY() + BORDER_W*2, display_drv.GetScreenW() / 2 - BORDER_W*2, speed_dw.GetHeight(), true);
-  flood_btn.SetFont(Font_12x16::GetInstance());
-  flood_btn.SetCallback(AppTask::GetCurrent());
-  // Air assist button (mist coolant repurposed)
-  mist_btn.SetParams("EXHAUST", display_drv.GetScreenW() / 2 + BORDER_W, speed_dw.GetEndY() + BORDER_W*2, display_drv.GetScreenW() / 2 - BORDER_W*2, speed_dw.GetHeight(), true);
-  mist_btn.SetFont(Font_12x16::GetInstance());
-  mist_btn.SetCallback(AppTask::GetCurrent());
-
-  // All good
   return Result::RESULT_OK;
 }
 
@@ -89,48 +150,59 @@ Result OverrideCtrlScr::Setup(int32_t y, int32_t height)
 // *****************************************************************************
 Result OverrideCtrlScr::Show()
 {
-  // Fill all windows
+  Application::GetInstance().HideGlobalUI();
+
+  prev_btn.Show(100);
+  next_btn.Show(100);
+  title_str.Show(101);
+
+  int32_t scr_w = display_drv.GetScreenW();
   for(uint32_t i = 0u; i < grbl_comm.GetLimitedNumberOfAxis(3u); i++)
   {
-    DataWindow& dw_real = Application::GetInstance().GetRealDataWindow(i);
-    String& dw_real_name = Application::GetInstance().GetRealDataWindowNameString(i);
+    DataWindow& dw_real      = Application::GetInstance().GetRealDataWindow(i);
+    String&     dw_real_name = Application::GetInstance().GetRealDataWindowNameString(i);
 
-    // Real position
-    dw_real.SetParams(BORDER_W + ((display_drv.GetScreenW() - BORDER_W * 4) / 3 + BORDER_W) * i, Application::GetInstance().GetScreenStartY() + BORDER_W*2 + Font_10x18::GetInstance().GetCharH(), (display_drv.GetScreenW() - BORDER_W * 4) / 3, Font_10x18::GetInstance().GetCharH() + Font_6x8::GetInstance().GetCharH()*2 + BORDER_W, 8u, grbl_comm.GetReportUnitsPrecision(i));
+    int32_t col_w = (scr_w - BORDER_W * 4) / 3;
+    dw_real.SetParams(BORDER_W + (col_w + BORDER_W) * (int32_t)i,
+                      axis_dro_y, col_w, axis_dro_h,
+                      8u, grbl_comm.GetReportUnitsPrecision(i));
     dw_real.SetBorder(BORDER_W / 2, COLOR_GREY);
     dw_real.SetDataFont(Font_10x18::GetInstance());
     dw_real.SetUnits(grbl_comm.GetReportUnits(), DataWindow::BOTTOM_RIGHT, Font_6x8::GetInstance());
-    // Axis Name
+
     dw_real_name.SetParams(grbl_comm.GetAxisName(i), 0, 0, COLOR_WHITE, Font_10x18::GetInstance());
-    dw_real_name.Move(dw_real.GetStartX() + (dw_real.GetWidth() - dw_real_name.GetWidth()) / 2, dw_real.GetStartY() - BORDER_W - dw_real_name.GetHeight());
+    dw_real_name.Move(dw_real.GetStartX() + (dw_real.GetWidth() - dw_real_name.GetWidth()) / 2,
+                      content_start);
 
     dw_real.Show(100);
     dw_real_name.Show(100);
   }
 
-  // Feed objects
   feed_dw.Show(100);
   feed_name.Show(100);
   feed_reset_btn.Show(100);
 
-  // Power override objects
   speed_dw.Show(100);
   speed_name.Show(100);
   speed_reset_btn.Show(100);
 
-  // Exhaust and air assist buttons
+  hdr_state.Show(101);
+  hdr_status_sub.Show(101);
+
   flood_btn.Show(100);
   mist_btn.Show(100);
+  fire_ovr_btn.SetString("FIRE");
+  fire_ovr_btn.SetColor(COLOR_WHITE);
+  fire_active = false;
+  fire_ovr_btn.Show(100);
+  mpg_ovr_btn.Show(100);
 
-  // Run button
-  left_btn.Show(102);
-  // Stop button
-  right_btn.Show(102);
+  run_btn.Show(100);
+  stop_btn.Show(100);
 
-  // Set encoder callback handler
-  InputDrv::GetInstance().AddEncoderCallbackHandler(AppTask::GetCurrent(), reinterpret_cast<CallbackPtr>(ProcessEncoderCallback), this, enc_cble);
+  InputDrv::GetInstance().AddEncoderCallbackHandler(AppTask::GetCurrent(),
+    reinterpret_cast<CallbackPtr>(ProcessEncoderCallback), this, enc_cble);
 
-  // All good
   return Result::RESULT_OK;
 }
 
@@ -139,134 +211,121 @@ Result OverrideCtrlScr::Show()
 // *****************************************************************************
 Result OverrideCtrlScr::Hide()
 {
-  // Delete encoder callback handler
   InputDrv::GetInstance().DeleteEncoderCallbackHandler(enc_cble);
 
-  // Axis data
+  prev_btn.Hide();
+  next_btn.Hide();
+  title_str.Hide();
+
   for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
   {
     Application::GetInstance().GetRealDataWindow(i).Hide();
     Application::GetInstance().GetRealDataWindowNameString(i).Hide();
   }
 
-  // Feed objects
   feed_dw.Hide();
   feed_name.Hide();
   feed_reset_btn.Hide();
 
-  // Power override objects
   speed_dw.Hide();
   speed_name.Hide();
   speed_reset_btn.Hide();
 
-  // Exhaust and air assist buttons
+  hdr_state.Hide();
+  hdr_status_sub.Hide();
+
   flood_btn.Hide();
   mist_btn.Hide();
+  fire_ovr_btn.Hide();
+  mpg_ovr_btn.Hide();
 
-  // Run button
-  left_btn.Hide();
-  // Stop button
-  right_btn.Hide();
+  run_btn.Hide();
+  stop_btn.Hide();
 
-  // All good
+  Application::GetInstance().ShowGlobalUI();
+
   return Result::RESULT_OK;
 }
 
 // *****************************************************************************
-// ***   TimerExpired function   ***********************************************
+// ***   TimerExpired   ********************************************************
 // *****************************************************************************
 Result OverrideCtrlScr::TimerExpired(uint32_t interval)
 {
   Result result = Result::RESULT_OK;
 
-  // Update left & right button text
-  Application::GetInstance().UpdateLeftButtonText();
-  Application::GetInstance().UpdateRightButtonText();
+  for(uint32_t i = 0u; i < grbl_comm.GetLimitedNumberOfAxis(3u); i++)
+    Application::GetInstance().GetRealDataWindow(i).SetNumber(grbl_comm.GetAxisPosition(i));
 
-  // Update numbers with current overrides
+  int32_t scr_w = display_drv.GetScreenW();
+  hdr_state.SetString(grbl_comm.GetCurrentStateName());
+  hdr_status_sub.SetString(grbl_comm.GetCurrentStatusName());
+  hdr_state.Move((scr_w - hdr_state.GetWidth()) / 2, hdr_state.GetStartY());
+  hdr_status_sub.Move((scr_w - hdr_status_sub.GetWidth()) / 2, hdr_status_sub.GetStartY());
+
   feed_dw.SetNumber(grbl_comm.GetFeedOverride());
   speed_dw.SetNumber(grbl_comm.GetSpeedOverride());
 
-  // Update exhaust and air assist button colors
   flood_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
   mist_btn.SetColor(grbl_comm.GetCoolantMist() ? COLOR_GREEN : COLOR_WHITE);
+  fire_ovr_btn.SetColor(fire_active ? COLOR_RED : COLOR_WHITE);
 
-  // Update feed if necessary. One step at a timer tick.
+  if(grbl_comm.GetMpgModeRequest())
+    mpg_ovr_btn.SetColor(grbl_comm.GetMpgMode() ? COLOR_GREEN : COLOR_RED);
+  else
+    mpg_ovr_btn.SetColor(grbl_comm.GetMpgMode() ? COLOR_RED : COLOR_WHITE);
+
+  run_btn.SetString(grbl_comm.GetState() == GrblComm::RUN ? "HOLD" : "RUN");
+
+  if(grbl_comm.GetState() == GrblComm::ALARM)
+    stop_btn.SetString(grbl_comm.GetStatusCode() == GrblComm::Status_NotAllowedCriticalEvent
+                       ? "RESET" : "UNLOCK");
+  else if((grbl_comm.GetState() == GrblComm::UNKNOWN) || (grbl_comm.GetState() == GrblComm::HOME))
+    stop_btn.SetString("RESET");
+  else
+    stop_btn.SetString("STOP");
+
   if(feed_val > 0)
   {
-    if(feed_val > 10)
-    {
-      result = grbl_comm.FeedCoarsePlus();
-      feed_val -= 10;
-    }
-    else
-    {
-      result = grbl_comm.FeedFinePlus();
-      feed_val--;
-    }
+    result = (feed_val > 10) ? grbl_comm.FeedCoarsePlus() : grbl_comm.FeedFinePlus();
+    feed_val -= (feed_val > 10) ? 10 : 1;
   }
   else if(feed_val < 0)
   {
-    if(feed_val < -10)
-    {
-      result = grbl_comm.FeedCoarseMinus();
-      feed_val += 10;
-    }
-    else
-    {
-      result = grbl_comm.FeedFineMinus();
-      feed_val++;
-    }
-  }
-  else
-  {
-    ; // Do nothing
+    result = (feed_val < -10) ? grbl_comm.FeedCoarseMinus() : grbl_comm.FeedFineMinus();
+    feed_val += (feed_val < -10) ? 10 : 1;
   }
 
-  // Update power override if necessary. One step at a timer tick.
   if(speed_val > 0)
   {
-    if(speed_val > 10)
-    {
-      result = grbl_comm.SpeedCoarsePlus();
-      speed_val -= 10;
-    }
-    else
-    {
-      result = grbl_comm.SpeedFinePlus();
-      speed_val--;
-    }
+    result = (speed_val > 10) ? grbl_comm.SpeedCoarsePlus() : grbl_comm.SpeedFinePlus();
+    speed_val -= (speed_val > 10) ? 10 : 1;
   }
   else if(speed_val < 0)
   {
-    if(speed_val < -10)
-    {
-      result = grbl_comm.SpeedCoarseMinus();
-      speed_val += 10;
-    }
-    else
-    {
-      result = grbl_comm.SpeedFineMinus();
-      speed_val++;
-    }
-  }
-  else
-  {
-    ; // Do nothing
+    result = (speed_val < -10) ? grbl_comm.SpeedCoarseMinus() : grbl_comm.SpeedFineMinus();
+    speed_val += (speed_val < -10) ? 10 : 1;
   }
 
-  // Return result
   return result;
 }
 
 // *****************************************************************************
-// ***   ProcessCallback function   ********************************************
+// ***   ProcessCallback   *****************************************************
 // *****************************************************************************
 Result OverrideCtrlScr::ProcessCallback(const void* ptr)
 {
   Result result = Result::RESULT_OK;
 
-  if(ptr == &feed_dw)
+  if(ptr == &prev_btn)
+  {
+    Application::GetInstance().PrevScreen();
+  }
+  else if(ptr == &next_btn)
+  {
+    Application::GetInstance().NextScreen();
+  }
+  else if(ptr == &feed_dw)
   {
     speed_dw.SetSelected(false);
     feed_dw.SetSelected(true);
@@ -286,59 +345,88 @@ Result OverrideCtrlScr::ProcessCallback(const void* ptr)
   }
   else if(ptr == &flood_btn)
   {
-    grbl_comm.CoolantFloodToggle(); // Exhaust fan
+    grbl_comm.CoolantFloodToggle(); // AIR = M8
   }
   else if(ptr == &mist_btn)
   {
-    grbl_comm.CoolantMistToggle(); // Air assist
+    grbl_comm.CoolantMistToggle(); // EXHAUST = M7
+  }
+  else if(ptr == &fire_ovr_btn)
+  {
+    bool was_in_control = grbl_comm.GetMpgModeRequest();
+    if(!was_in_control) grbl_comm.GainControl();
+    uint32_t id = 0u;
+    if(!fire_active)
+    {
+      grbl_comm.CoolantFloodToggle();
+      grbl_comm.CoolantMistToggle();
+      grbl_comm.SendCmd("$32=0\r", id);
+      grbl_comm.SendCmd("M3 S30\r", id);
+      fire_active = true;
+    }
+    else
+    {
+      grbl_comm.SendCmd("M5\r", id);
+      grbl_comm.SendCmd("$32=1\r", id);
+      grbl_comm.CoolantFloodToggle();
+      grbl_comm.CoolantMistToggle();
+      fire_active = false;
+    }
+    if(!was_in_control) grbl_comm.ReleaseControl();
+  }
+  else if(ptr == &mpg_ovr_btn)
+  {
+    if(grbl_comm.GetMpgModeRequest())
+      grbl_comm.ReleaseControl();
+    else
+      grbl_comm.GainControl();
+  }
+  else if(ptr == &run_btn)
+  {
+    if(grbl_comm.GetState() != GrblComm::RUN)
+      grbl_comm.Run();
+    else
+      grbl_comm.Hold();
+  }
+  else if(ptr == &stop_btn)
+  {
+    if(grbl_comm.GetState() == GrblComm::ALARM)
+    {
+      if(grbl_comm.GetStatusCode() == GrblComm::Status_NotAllowedCriticalEvent)
+        grbl_comm.Reset();
+      else
+        grbl_comm.Unlock();
+    }
+    else if((grbl_comm.GetState() == GrblComm::UNKNOWN) || (grbl_comm.GetState() == GrblComm::HOME))
+    {
+      grbl_comm.Reset();
+    }
+    else
+    {
+      grbl_comm.Stop();
+    }
   }
   else
   {
-    result = Result::ERR_UNHANDLED_REQUEST; // For Application to handle it
+    result = Result::ERR_UNHANDLED_REQUEST;
   }
 
-  // Return result
   return result;
 }
 
-// *************************************************************************
-// ***   Private: ProcessEncoderCallback function   ************************
-// *************************************************************************
+// *****************************************************************************
+// ***   ProcessEncoderCallback   **********************************************
+// *****************************************************************************
 Result OverrideCtrlScr::ProcessEncoderCallback(OverrideCtrlScr* obj_ptr, void* ptr)
 {
   Result result = Result::ERR_NULL_PTR;
-
-  // Check pointer
   if(obj_ptr != nullptr)
   {
-    // Cast pointer to "this". Since we can't use non-static members as callback,
-    // we have to provide pinter to object.
     OverrideCtrlScr& ths = *obj_ptr;
-    // Cast pointer itself to integer value
     int32_t enc_val = (int32_t)ptr;
-
-    // Save value to process it later
-    if(ths.feed_dw.IsSelected())
-    {
-      ths.feed_val += enc_val;
-    }
-
-    // Save value to process it later
-    if(ths.speed_dw.IsSelected())
-    {
-      ths.speed_val += enc_val;
-    }
-
-    // Set ok result
+    if(ths.feed_dw.IsSelected())  ths.feed_val  += enc_val;
+    if(ths.speed_dw.IsSelected()) ths.speed_val += enc_val;
     result = Result::RESULT_OK;
   }
-
-  // Return result
   return result;
 }
-
-// *************************************************************************
-// ***   Private constructor   *********************************************
-// *************************************************************************
-OverrideCtrlScr::OverrideCtrlScr() : left_btn(Application::GetInstance().GetLeftButton()),
-                                     right_btn(Application::GetInstance().GetRightButton()) {};

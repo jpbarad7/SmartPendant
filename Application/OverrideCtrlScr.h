@@ -1,127 +1,85 @@
 //******************************************************************************
 //  @file OverrideCtrlScr.h
-//  @author Nicolai Shlapunov
+//  @author Nicolai Shlapunov / JPB Laser modifications
 //
-//  @details OverrideCtrlScr: User OverrideCtrlScr Class, header
-//
-//  @copyright Copyright (c) 2023, Devtronic & Nicolai Shlapunov
-//             All rights reserved.
-//
-//  @section SUPPORT
-//
-//   Devtronic invests time and resources providing this open source code,
-//   please support Devtronic and open-source hardware/software by
-//   donations and/or purchasing products from Devtronic.
+//  @details OverrideCtrlScr: Feed and power override screen.
+//           Full-screen self-contained layout matching home screen pattern.
 //
 //******************************************************************************
 
 #ifndef OverrideCtrlScr_h
 #define OverrideCtrlScr_h
 
-// *****************************************************************************
-// ***   Includes   ************************************************************
-// *****************************************************************************
 #include "DevCfg.h"
 #include "DisplayDrv.h"
 #include "UiEngine.h"
-
 #include "IScreen.h"
 #include "DataWindow.h"
 #include "GrblComm.h"
 #include "InputDrv.h"
 
-// *****************************************************************************
-// ***   Local const variables   ***********************************************
-// *****************************************************************************
-
-// *****************************************************************************
-// ***   Defines   *************************************************************
-// *****************************************************************************
 #define BG_Z (100)
 
-// *****************************************************************************
-// ***   OverrideCtrlScr Class   ***********************************************
-// *****************************************************************************
 class OverrideCtrlScr : public IScreen
 {
   public:
-    // *************************************************************************
-    // ***   Get Instance   ****************************************************
-    // *************************************************************************
     static OverrideCtrlScr& GetInstance();
-
-    // *************************************************************************
-    // ***   Setup function   **************************************************
-    // *************************************************************************
     virtual Result Setup(int32_t y, int32_t height);
-
-    // *************************************************************************
-    // ***   Public: Show   ****************************************************
-    // *************************************************************************
     virtual Result Show();
-
-    // *************************************************************************
-    // ***   Public: Hide   ****************************************************
-    // *************************************************************************
     virtual Result Hide();
-
-    // *************************************************************************
-    // ***   Public: TimerExpired   ********************************************
-    // *************************************************************************
     virtual Result TimerExpired(uint32_t interval);
-
-    // *************************************************************************
-    // ***   Public: ProcessCallback   *****************************************
-    // *************************************************************************
     virtual Result ProcessCallback(const void* ptr);
 
   private:
     static const uint8_t BORDER_W = 4u;
 
-    // String for caption
-    String feed_name;
-    // Data windows to show current value
+    // Navigation bar (same pattern as home screen)
+    UiButton prev_btn;
+    UiButton next_btn;
+    String   title_str;
+
+    // Feed override
+    String     feed_name;
     DataWindow feed_dw;
-    // Buttons for reset feed to default
-    UiButton feed_reset_btn;
-    // Feed value
-    int32_t feed_val = 0;
+    UiButton   feed_reset_btn;
+    int32_t    feed_val = 0;
 
-    // String for caption
-    String speed_name;
-    // Data windows to show current value
+    // Power override
+    String     speed_name;
     DataWindow speed_dw;
-    // Buttons for reset speed to default
-    UiButton speed_reset_btn;
-    // Feed value
-    int32_t speed_val = 0;
+    UiButton   speed_reset_btn;
+    int32_t    speed_val = 0;
 
-    // Buttons for control flood coolant
-    UiButton flood_btn;
-    // Buttons for control mist coolant
-    UiButton mist_btn;
+    // Status display
+    String hdr_state;
+    String hdr_status_sub;
 
-    // Soft Buttons
-    UiButton& left_btn;
-    UiButton& right_btn;
+    // Aux row: AIR | EXHAUST | FIRE | MPG
+    UiButton flood_btn;    // AIR   (M8)
+    UiButton mist_btn;     // EXHAUST (M7)
+    UiButton fire_ovr_btn; // FIRE test
+    UiButton mpg_ovr_btn;  // MPG toggle
+    bool     fire_active = false;
 
-    // Display driver instance
+    // Bottom row
+    UiButton run_btn;
+    UiButton stop_btn;
+
+    // Layout values computed in Setup, used in Show
+    int32_t axis_dro_y    = 0;
+    int32_t axis_dro_h    = 0;
+    int32_t content_start = 0;
+
+    // Driver instances
     DisplayDrv& display_drv = DisplayDrv::GetInstance();
-    // GRBL Communication Interface instance
-    GrblComm& grbl_comm = GrblComm::GetInstance();
+    GrblComm&   grbl_comm   = GrblComm::GetInstance();
 
-    // Encoder callback entry
+    // Encoder callback
     InputDrv::CallbackListEntry enc_cble;
 
-    // *************************************************************************
-    // ***   Private: ProcessEncoderCallback function   ************************
-    // *************************************************************************
     static Result ProcessEncoderCallback(OverrideCtrlScr* obj_ptr, void* ptr);
 
-    // *************************************************************************
-    // ***   Private constructor   *********************************************
-    // *************************************************************************
-    OverrideCtrlScr();
+    OverrideCtrlScr() {};
 };
 
 #endif
