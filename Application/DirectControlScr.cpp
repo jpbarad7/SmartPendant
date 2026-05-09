@@ -88,13 +88,13 @@ Result DirectControlScr::Setup(int32_t y, int32_t height)
   spindle_dw.SetParams(BORDER_W, y + height - window_height - BORDER_W, display_drv.GetScreenW() / 2 - BORDER_W * 3 / 2, window_height, 5u, 0);
   spindle_dw.SetBorder(BORDER_W, COLOR_RED);
   spindle_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
-  spindle_dw.SetNumber(grbl_comm.GetSpindleMinSpeed());
-  spindle_dw.SetLimits(grbl_comm.GetSpindleMinSpeed(), grbl_comm.GetSpindleMaxSpeed());
-  spindle_dw.SetUnits("S", DataWindow::RIGHT);
+  spindle_dw.SetNumber(100);
+  spindle_dw.SetLimits(0, 200);
+  spindle_dw.SetUnits("%", DataWindow::RIGHT);
   spindle_dw.SetCallback(AppTask::GetCurrent());
   spindle_dw.SetActive(true);
   spindle_dw.SetSelected(true);
-  spindle_name.SetParams("POWER", 0, 0, COLOR_WHITE, Font_8x12::GetInstance());
+  spindle_name.SetParams("PWR OVR", 0, 0, COLOR_WHITE, Font_8x12::GetInstance());
   spindle_name.Move(spindle_dw.GetStartX() + BORDER_W*2, spindle_dw.GetStartY() + BORDER_W*2);
 
   // Exhaust fan button (M7/HE1)
@@ -111,7 +111,8 @@ Result DirectControlScr::Setup(int32_t y, int32_t height)
   snprintf(ver_txt, sizeof(ver_txt), "SmartPendant %d.%03d.%d %luMHz", VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD, crystal_freq);
 #endif
   // Version string
-  version.SetParams(ver_txt, BORDER_W, scale_btn[0].GetEndY() + (spindle_dw.GetStartY() - scale_btn[0].GetEndY() - Font_8x12::GetInstance().GetCharH()) / 2, COLOR_WHITE, Font_8x12::GetInstance());
+  version.SetParams(ver_txt, 0, scale_btn[0].GetEndY() + (spindle_dw.GetStartY() - scale_btn[0].GetEndY() - Font_8x12::GetInstance().GetCharH()) / 2, COLOR_WHITE, Font_8x12::GetInstance());
+  version.Move(display_drv.GetScreenW() / 2 - version.GetWidth() / 2, version.GetStartY());
 
   // All good
   return Result::RESULT_OK;
@@ -278,17 +279,23 @@ Result DirectControlScr::TimerExpired(uint32_t interval)
   spindle_dir_btn.SetColor(grbl_comm.GetCoolantMist() ? COLOR_GREEN : COLOR_WHITE);
   // Update exhaust fan button color: green when on, white when off
   spindle_ctrl_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
-  // Update laser power readback
-  spindle_dw.SetNumber(grbl_comm.GetSpindleSpeed());
+  // Update laser power override percentage
+  spindle_dw.SetNumber(grbl_comm.GetSpeedOverride());
   // Update FIRE button color: red when active, white when off
   middle_btn.SetColor(fire_active ? COLOR_RED : COLOR_WHITE);
 
-  // Laser power adjustment via encoder
+  // Laser power override adjustment via encoder
   if(jog_val != 0)
   {
-    // Update power in data window
-    spindle_dw.SetNumber(spindle_dw.GetNumber() + jog_val * scale);
-    // Clear jog value
+    // Send speed override commands based on encoder direction
+    if(jog_val > 0)
+    {
+      for(int32_t i = 0; i < jog_val; i++) grbl_comm.SpeedFinePlus();
+    }
+    else
+    {
+      for(int32_t i = 0; i > jog_val; i--) grbl_comm.SpeedFineMinus();
+    }
     jog_val = 0;
   }
 
@@ -529,10 +536,11 @@ void DirectControlScr::UpdateScaleButtons()
       // Create scale for the button
       grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]), scale_val[i], grbl_comm.GetReportUnitsScaler(axis), grbl_comm.GetReportUnits(axis), grbl_comm.IsRotaryAxis(axis));
     }
-    else // Laser power S value
+    else // Power override mode - show metric jog scale values same as axis mode
     {
-      scale_val[i] = (i == 0u) ? 1u : scale_val[i - 1u] * 10u;
-      grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]), scale_val[i], 1, "S");
+      uint32_t idx = (grbl_comm.IsMetric() ? NVM::MPG_METRIC_FEED_1 : NVM::MPG_IMPERIAL_FEED_1);
+      scale_val[i] = NVM::GetInstance().GetValue((NVM::Parameters)(idx + i));
+      grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]), scale_val[i], grbl_comm.GetReportUnitsScaler(GrblComm::AXIS_X), grbl_comm.GetReportUnits(GrblComm::AXIS_X), false);
     }
 
     // Replace space with new line between scale and units
