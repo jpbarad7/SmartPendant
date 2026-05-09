@@ -1,29 +1,17 @@
 //******************************************************************************
 //  @file DirectControlScr.cpp
-//  @author Nicolai Shlapunov
+//  @author Nicolai Shlapunov / JPB Laser modifications
 //
-//  @details DirectControlScr: User DirectControlScr Class, implementation
-//
-//  @copyright Copyright (c) 2023, Devtronic & Nicolai Shlapunov
-//             All rights reserved.
-//
-//  @section SUPPORT
-//
-//   Devtronic invests time and resources providing this open source code,
-//   please support Devtronic and open-source hardware/software by
-//   donations and/or purchasing products from Devtronic.
+//  @details Full-screen home layout for laser pendant.
+//           Hides the global Application header and status bar on Show()
+//           and restores them on Hide(). All navigation, status, and
+//           machine controls are self-contained in this screen.
 //
 //******************************************************************************
 
-// *****************************************************************************
-// ***   Includes   ************************************************************
-// *****************************************************************************
 #include "DirectControlScr.h"
-
 #include "Application.h"
 
-// *****************************************************************************
-// ***   Get Instance   ********************************************************
 // *****************************************************************************
 DirectControlScr& DirectControlScr::GetInstance()
 {
@@ -32,89 +20,137 @@ DirectControlScr& DirectControlScr::GetInstance()
 }
 
 // *****************************************************************************
-// ***   DirectControlScr Setup   **********************************************
+// ***   Setup   ***************************************************************
 // *****************************************************************************
 Result DirectControlScr::Setup(int32_t y, int32_t height)
 {
-  // Get crystal frequency. PLL configured in such way, that input frequency
-  // divided to be 1 MHz. So, divider is equal to actual crystal frequency.
-  uint32_t crystal_freq = ((RCC->PLLCFGR & RCC_PLLCFGR_PLLM_Msk) >> RCC_PLLCFGR_PLLM_Pos);
+  // Ignore y and height — home screen uses the full display
+  int32_t scr_w = display_drv.GetScreenW(); // 320
+  int32_t scr_h = display_drv.GetScreenH(); // 480
 
-  int32_t start_y = y + BORDER_W;
-  // Data window height
-  uint32_t window_height = (height - Font_8x12::GetInstance().GetCharH() - BORDER_W) / (grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)) + 2) - BORDER_W*2;
-  // Check if windows is too large
-  if(window_height > Font_8x12::GetInstance().GetCharH() * 5u) window_height = Font_8x12::GetInstance().GetCharH() * 5u;
+  // Window height: Font_8x12 * 5, same as original code
+  uint32_t window_height = Font_8x12::GetInstance().GetCharH() * 5u; // 60px
 
-  // Fill all windows
+  // Vertical centering:
+  // 7 rows of window_height + 7 gaps:
+  //   nav→X : BORDER_W + DRO_MARGIN
+  //   X→Y   : BORDER_W
+  //   Y→Z   : BORDER_W
+  //   Z→scl : BORDER_W * 2 (= DRO_MARGIN)
+  //   scl→ax: BORDER_W
+  //   ax→run: BORDER_W
+  // Total gaps = 7*BORDER_W + DRO_MARGIN = 28 + 8 = 36
+  int32_t total_h = 7 * (int32_t)window_height + 7 * BORDER_W + (int32_t)DRO_MARGIN;
+  int32_t nav_y   = (scr_h - total_h) / 2; // = 12 for 480px screen
+
+  // DRO section starts after nav bar + gap + margin
+  int32_t dro_y_base = nav_y + (int32_t)window_height + BORDER_W + (int32_t)DRO_MARGIN;
+
+  // *** DRO windows (same x layout as original) ***
   for(uint32_t i = 0u; i < grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)); i++)
   {
-    // Axis position
-    dw[i].SetParams(display_drv.GetScreenW() / 6, start_y + (window_height + BORDER_W*2) * i, (display_drv.GetScreenW() - BORDER_W*2) * 4 / 6,  window_height, 8u, grbl_comm.GetReportUnitsPrecision(i));
+    int32_t row_y = dro_y_base + (int32_t)i * ((int32_t)window_height + BORDER_W);
+
+    dw[i].SetParams(scr_w / 6, row_y, (scr_w - BORDER_W * 2) * 4 / 6, window_height,
+                    8u, grbl_comm.GetReportUnitsPrecision(i));
     dw[i].SetBorder(BORDER_W, COLOR_RED);
     dw[i].SetDataFont(Font_8x12::GetInstance(), 2u);
     dw[i].SetNumber(0);
     dw[i].SetUnits(grbl_comm.GetReportUnits(i), DataWindow::RIGHT);
     dw[i].SetCallback(AppTask::GetCurrent());
     dw[i].SetActive(true);
+
     axis_names[i].SetParams(grbl_comm.GetAxisName(i), 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
     axis_names[i].SetScale(2u);
-    axis_names[i].Move((dw[i].GetStartX() / 2) - (axis_names[i].GetWidth() / 2), (dw[i].GetStartY() + dw[i].GetHeight() / 2) - (axis_names[i].GetHeight() / 2));
-    // Set/Zero button
-    zero_btn[i].SetParams("<0>", dw[i].GetEndX() + BORDER_W, dw[i].GetStartY(), display_drv.GetScreenW() - dw[i].GetEndX() - BORDER_W * 2, dw[i].GetHeight(), true);
+    axis_names[i].Move((dw[i].GetStartX() / 2) - (axis_names[i].GetWidth() / 2),
+                       (dw[i].GetStartY() + (int32_t)dw[i].GetHeight() / 2) - (axis_names[i].GetHeight() / 2));
+
+    zero_btn[i].SetParams("<0>", dw[i].GetEndX() + BORDER_W, row_y,
+                          scr_w - dw[i].GetEndX() - BORDER_W * 2, window_height, true);
     zero_btn[i].SetCallback(AppTask::GetCurrent());
   }
-  // Scale buttons
+
+  // *** X mode button (lathe, not used in laser) ***
+  x_mode_btn.SetParams("", BORDER_W, dw[GrblComm::AXIS_X].GetStartY(),
+                       dw[GrblComm::AXIS_X].GetStartX() - BORDER_W * 2,
+                       dw[GrblComm::AXIS_X].GetHeight(), true);
+  x_mode_btn.SetCallback(AppTask::GetCurrent());
+  x_mode_str.SetParams("", dw[GrblComm::AXIS_X].GetStartX() + BORDER_W * 2,
+                       dw[GrblComm::AXIS_X].GetStartY() + BORDER_W * 2,
+                       COLOR_WHITE, Font_8x12::GetInstance());
+
+  // *** Scale buttons (same x positions as original, new y) ***
+  uint32_t scale_btn_w = ((uint32_t)scr_w - BORDER_W * (NumberOf(scale_btn) + 1u)) / NumberOf(scale_btn); // 75
+  int32_t  scale_y     = dw[grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)) - 1u].GetEndY() + BORDER_W * 2;
+
   for(uint32_t i = 0u; i < NumberOf(scale_btn); i++)
   {
-    // Calculate scale button width
-    uint32_t scale_btn_w = (display_drv.GetScreenW() - BORDER_W * (NumberOf(scale_btn) + 1u)) / NumberOf(scale_btn);
-    // Set scale button parameters
-    scale_btn[i].SetParams(scale_str[i], BORDER_W + i * (scale_btn_w + BORDER_W), dw[grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)) - 1u].GetEndY() + BORDER_W*2, scale_btn_w, window_height, true);
+    scale_btn[i].SetParams(scale_str[i],
+                           BORDER_W + (int32_t)i * ((int32_t)scale_btn_w + BORDER_W),
+                           scale_y, scale_btn_w, window_height, true);
     scale_btn[i].SetCallback(AppTask::GetCurrent());
     scale_btn[i].SetSpacing(3u);
     scale_btn[i].SetPressed(false);
   }
-  // Set third button pressed
-  scale_btn[3u].SetPressed(true);
+  scale_btn[3u].SetPressed(true); // default 0.500mm
 
-  // X button - not used in laser mode but kept for compatibility
-  x_mode_btn.SetParams("", BORDER_W, dw[GrblComm::AXIS_X].GetStartY(), dw[GrblComm::AXIS_X].GetStartX() - BORDER_W * 2, dw[GrblComm::AXIS_X].GetHeight(), true);
-  x_mode_btn.SetCallback(AppTask::GetCurrent());
-  // X axis mode string - not used in laser mode
-  x_mode_str.SetParams("", dw[GrblComm::AXIS_X].GetStartX() + BORDER_W*2, dw[GrblComm::AXIS_X].GetStartY() + BORDER_W*2, COLOR_WHITE, Font_8x12::GetInstance());
+  // *** Navigation bar: prev_btn | status | next_btn ***
+  // Arrow buttons match zero_btn width
+  int32_t arrow_w  = scr_w - dw[0].GetEndX() - BORDER_W * 2; // = zero_btn width = 51
+  int32_t status_x = BORDER_W + arrow_w + BORDER_W;           // = 4+51+4 = 59
+  int32_t status_w = scr_w - BORDER_W - arrow_w - BORDER_W - status_x - BORDER_W; // 202
 
-  // Laser power display
-  spindle_dw.SetParams(BORDER_W, y + height - window_height - BORDER_W, display_drv.GetScreenW() / 2 - BORDER_W * 3 / 2, window_height, 5u, 0);
-  spindle_dw.SetBorder(BORDER_W, COLOR_RED);
-  spindle_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
-  spindle_dw.SetNumber(100);
-  spindle_dw.SetLimits(0, 200);
-  spindle_dw.SetUnits("%", DataWindow::RIGHT);
-  spindle_dw.SetCallback(AppTask::GetCurrent());
-  spindle_dw.SetActive(true);
-  spindle_dw.SetSelected(true);
-  spindle_name.SetParams("PWR OVR", 0, 0, COLOR_WHITE, Font_8x12::GetInstance());
-  spindle_name.Move(spindle_dw.GetStartX() + BORDER_W*2, spindle_dw.GetStartY() + BORDER_W*2);
+  prev_btn.SetParams("<", BORDER_W, nav_y, arrow_w, window_height, true);
+  prev_btn.SetCallback(AppTask::GetCurrent());
 
-  // Exhaust fan button (M7/HE1)
-  spindle_dir_btn.SetParams("EXHAUST", spindle_dw.GetEndX() + 1 + BORDER_W, spindle_dw.GetStartY(), (spindle_dw.GetWidth() - BORDER_W) / 2, window_height, true);
-  spindle_dir_btn.SetCallback(AppTask::GetCurrent());
-  // Air assist button (M8/HE0)
-  spindle_ctrl_btn.SetParams("AIR", spindle_dir_btn.GetEndX() + 1 + BORDER_W, spindle_dir_btn.GetStartY(), spindle_dir_btn.GetWidth(), window_height, true);
+  next_btn.SetParams(">", scr_w - BORDER_W - arrow_w, nav_y, arrow_w, window_height, true);
+  next_btn.SetCallback(AppTask::GetCurrent());
+
+  // State text: vertically centered in nav bar
+  hdr_state.SetParams("-----", status_x + BORDER_W,
+                      nav_y + ((int32_t)window_height - Font_12x16::GetInstance().GetCharH()) / 2,
+                      COLOR_WHITE, Font_12x16::GetInstance());
+
+  // Status sub-text: near bottom of nav bar
+  hdr_status_sub.SetParams("", status_x + BORDER_W + 5 * Font_12x16::GetInstance().GetCharW() + Font_8x12::GetInstance().GetCharW(),
+                            nav_y + (int32_t)window_height - Font_8x12::GetInstance().GetCharH() - BORDER_W / 2,
+                            COLOR_WHITE, Font_8x12::GetInstance());
+
+  // *** Aux button row: AIR | EXHAUST | FIRE | MPG ***
+  int32_t aux_y = scale_btn[0].GetEndY() + BORDER_W;
+
+  spindle_ctrl_btn.SetParams("AIR",
+                             BORDER_W,
+                             aux_y, scale_btn_w, window_height, true);
   spindle_ctrl_btn.SetCallback(AppTask::GetCurrent());
 
-  // Create version string with oscillator frequency
-#if defined(DEBUG)
-  snprintf(ver_txt, sizeof(ver_txt), "SmartPendant %d.%03d.%d %luMHz DEV", VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD, crystal_freq);
-#else
-  snprintf(ver_txt, sizeof(ver_txt), "SmartPendant %d.%03d.%d %luMHz", VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD, crystal_freq);
-#endif
-  // Version string
-  version.SetParams(ver_txt, 0, scale_btn[0].GetEndY() + (spindle_dw.GetStartY() - scale_btn[0].GetEndY() - Font_8x12::GetInstance().GetCharH()) / 2, COLOR_WHITE, Font_8x12::GetInstance());
-  version.Move(display_drv.GetScreenW() / 2 - version.GetWidth() / 2, version.GetStartY());
+  spindle_dir_btn.SetParams("EXHAUST",
+                            BORDER_W + (int32_t)scale_btn_w + BORDER_W,
+                            aux_y, scale_btn_w, window_height, true);
+  spindle_dir_btn.SetCallback(AppTask::GetCurrent());
 
-  // All good
+  fire_btn.SetParams("FIRE",
+                     BORDER_W + 2 * ((int32_t)scale_btn_w + BORDER_W),
+                     aux_y, scale_btn_w, window_height, true);
+  fire_btn.SetCallback(AppTask::GetCurrent());
+
+  mpg_home_btn.SetParams("MPG",
+                         BORDER_W + 3 * ((int32_t)scale_btn_w + BORDER_W),
+                         aux_y, scale_btn_w, window_height, true);
+  mpg_home_btn.SetCallback(AppTask::GetCurrent());
+
+  // *** Bottom row: Run | Stop (each 2 aux buttons wide) ***
+  int32_t run_stop_w = 2 * (int32_t)scale_btn_w + BORDER_W; // 154
+  int32_t run_stop_y = aux_y + (int32_t)window_height + BORDER_W;
+
+  run_btn.SetParams("Run", BORDER_W, run_stop_y, run_stop_w, window_height, true);
+  run_btn.SetCallback(AppTask::GetCurrent());
+
+  stop_btn.SetParams("Stop",
+                     BORDER_W + run_stop_w + BORDER_W,
+                     run_stop_y, run_stop_w, window_height, true);
+  stop_btn.SetCallback(AppTask::GetCurrent());
+
   return Result::RESULT_OK;
 }
 
@@ -123,13 +159,19 @@ Result DirectControlScr::Setup(int32_t y, int32_t height)
 // *****************************************************************************
 Result DirectControlScr::Show()
 {
-  // Version string
-  version.Show(1);
+  // Hide the global Application header and status bar — home screen is self-contained
+  Application::GetInstance().HideGlobalUI();
 
-  // Update scale buttons
+  // Navigation bar
+  prev_btn.Show(100);
+  next_btn.Show(100);
+  hdr_state.Show(101);
+  hdr_status_sub.Show(101);
+
+  // Scale buttons
   UpdateScaleButtons();
 
-  // Axis data
+  // DRO windows
   for(uint32_t i = 0u; i < grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)); i++)
   {
     dw[i].Show(100);
@@ -137,36 +179,27 @@ Result DirectControlScr::Show()
     zero_btn[i].Show(100);
   }
 
-  // Set current axis to none to prevent accidental movement
+  // Reset axis selection
   axis = GrblComm::AXIS_CNT;
-  // Set border to red for all windows
-  for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
-  {
-    dw[i].SetSelected(false);
-  }
+  for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++) dw[i].SetSelected(false);
 
-  // Laser power display
-  spindle_dw.Show(100);
-  spindle_dw.SetSelected(false);
-  spindle_name.Show(101);
-  // Air assist button
-  spindle_dir_btn.Show(100);
-  // Exhaust fan button
-  spindle_ctrl_btn.Show(100);
+  // Aux row
+  spindle_ctrl_btn.Show(100); // AIR
+  spindle_dir_btn.Show(100);  // EXHAUST
+  fire_btn.SetString("FIRE");
+  fire_btn.SetColor(COLOR_WHITE);
+  fire_active = false;
+  fire_btn.Show(100);
+  mpg_home_btn.Show(100);
 
-  // Always show three soft buttons in laser mode
-  Application::GetInstance().InitSoftButtons(true);
-  middle_btn.SetString("FIRE");
-  middle_btn.Show(102);
+  // Bottom row
+  run_btn.Show(100);
+  stop_btn.Show(100);
 
-  // Soft Buttons
-  left_btn.Show(102);
-  right_btn.Show(102);
+  // Encoder callback
+  InputDrv::GetInstance().AddEncoderCallbackHandler(AppTask::GetCurrent(),
+    reinterpret_cast<CallbackPtr>(ProcessEncoderCallback), this, enc_cble);
 
-  // Set encoder callback handler
-  InputDrv::GetInstance().AddEncoderCallbackHandler(AppTask::GetCurrent(), reinterpret_cast<CallbackPtr>(ProcessEncoderCallback), this, enc_cble);
-
-  // All good
   return Result::RESULT_OK;
 }
 
@@ -175,140 +208,141 @@ Result DirectControlScr::Show()
 // *****************************************************************************
 Result DirectControlScr::Hide()
 {
-  // Delete encoder callback handler
+  // Remove encoder callback
   InputDrv::GetInstance().DeleteEncoderCallbackHandler(enc_cble);
 
-  // Version string
-  version.Hide();
-
-  // In case if it shown, we should hide it
+  // Hide change box if open
   change_box.Hide();
 
-  // Axis data
+  // Hide all home screen elements
+  prev_btn.Hide();
+  next_btn.Hide();
+  hdr_state.Hide();
+  hdr_status_sub.Hide();
+
   for(uint32_t i = 0u; i < NumberOf(dw); i++)
   {
     dw[i].Hide();
     axis_names[i].Hide();
     zero_btn[i].Hide();
   }
-  // Scale buttons
-  for(uint32_t i = 0u; i < NumberOf(scale_btn); i++)
-  {
-    scale_btn[i].Hide();
-  }
+  for(uint32_t i = 0u; i < NumberOf(scale_btn); i++) scale_btn[i].Hide();
 
-  // Hide X button and mode string (not used in laser mode)
   x_mode_btn.Hide();
   x_mode_str.Hide();
 
-  // Laser power / aux controls
-  spindle_dw.Hide();
-  spindle_name.Hide();
-  spindle_dir_btn.Hide();
-  spindle_ctrl_btn.Hide();
+  spindle_ctrl_btn.Hide(); // AIR
+  spindle_dir_btn.Hide();  // EXHAUST
+  fire_btn.Hide();
+  mpg_home_btn.Hide();
+  run_btn.Hide();
+  stop_btn.Hide();
 
-  // Soft Buttons
-  left_btn.Hide();
-  middle_btn.Hide();
-  right_btn.Hide();
+  // Restore the global Application header and status bar for other screens
+  Application::GetInstance().ShowGlobalUI();
 
-  // Reinit Soft Buttons to change their size back
-  Application::GetInstance().InitSoftButtons(false);
-
-  // All good
   return Result::RESULT_OK;
 }
 
 // *****************************************************************************
-// ***   TimerExpired function   ***********************************************
+// ***   TimerExpired   ********************************************************
 // *****************************************************************************
 Result DirectControlScr::TimerExpired(uint32_t interval)
 {
   Result result = Result::RESULT_OK;
 
-  // Update left & right button text
-  Application::GetInstance().UpdateLeftButtonText();
-  Application::GetInstance().UpdateRightButtonText();
+  // *** Update nav bar status display ***
+  hdr_state.SetString(grbl_comm.GetCurrentStateName());
+  hdr_status_sub.SetString(grbl_comm.GetCurrentStatusName());
+  // Center both strings within the status area between the nav buttons
+  int32_t status_x   = prev_btn.GetEndX() + BORDER_W;
+  int32_t status_w   = next_btn.GetStartX() - BORDER_W - status_x;
+  hdr_state.Move(status_x + (status_w - hdr_state.GetWidth()) / 2, hdr_state.GetStartY());
+  hdr_status_sub.Move(status_x + (status_w - hdr_status_sub.GetWidth()) / 2, hdr_status_sub.GetStartY());
 
-  // Update numbers with current position
+  // *** Update DRO positions ***
   for(uint32_t i = 0u; i < grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)); i++)
   {
     dw[i].SetNumber(grbl_comm.GetAxisPosition(i));
   }
 
-  // Process jogging
+  // *** Process jogging ***
   for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
   {
-    // If requested position changed
     if(axis_jog_val[i] != 0)
     {
-      // Calculate distance - number of encoder clicks multiplied by click value
       int32_t distance = axis_jog_val[i] * scale;
 
-      // Feed in mm/min
       uint32_t feed_x100 = (grbl_comm.IsRotaryAxis(axis) ? 21600u : 600u) * 100u;
-      // If jogging direction is not changed
-      if(((axis_jog_dir[i] < 0) && (axis_jog_val[i] < 0)) || ((axis_jog_dir[i] > 0) && (axis_jog_val[i] > 0)))
+      if(((axis_jog_dir[i] < 0) && (axis_jog_val[i] < 0)) ||
+         ((axis_jog_dir[i] > 0) && (axis_jog_val[i] > 0)))
       {
-        // Feed in encoder clicks per second
         feed_x100 = InputDrv::GetInstance().GetEncoderSpeed();
-        // 20 clicks per second as minimum feed
         if(feed_x100 < 20u) feed_x100 = 20u;
-        // Feed in units per second
-        feed_x100 *= scale;
-        // Convert feed from units/sec to units*100/min
+        feed_x100 *= (uint32_t)scale;
         feed_x100 = feed_x100 * 60u / 10u;
       }
       else
       {
-        // Save direction of jog
         axis_jog_dir[i] = axis_jog_val[i] > 0 ? 1 : -1;
       }
 
-      // Jog machine
       result = grbl_comm.Jog(i, distance, feed_x100, false);
-
-      // Clear value
       axis_jog_val[i] = 0;
-      // One axis at a time
       break;
     }
   }
 
-  // Update air assist button color: green when on, white when off
-  spindle_dir_btn.SetColor(grbl_comm.GetCoolantMist() ? COLOR_GREEN : COLOR_WHITE);
-  // Update exhaust fan button color: green when on, white when off
+  // *** AIR button color (M8 = CoolantFlood) ***
   spindle_ctrl_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
-  // Update laser power override percentage
-  spindle_dw.SetNumber(grbl_comm.GetSpeedOverride());
-  // Update FIRE button color: red when active, white when off
-  middle_btn.SetColor(fire_active ? COLOR_RED : COLOR_WHITE);
+  // *** EXHAUST button color (M7 = CoolantMist) ***
+  spindle_dir_btn.SetColor(grbl_comm.GetCoolantMist() ? COLOR_GREEN : COLOR_WHITE);
+  // *** FIRE button color ***
+  fire_btn.SetColor(fire_active ? COLOR_RED : COLOR_WHITE);
 
-  // Laser power override adjustment via encoder
-  if(jog_val != 0)
+  // *** MPG button color — mirrors Application mpg_btn logic ***
+  if(grbl_comm.GetMpgModeRequest())
   {
-    // Send speed override commands based on encoder direction
-    if(jog_val > 0)
-    {
-      for(int32_t i = 0; i < jog_val; i++) grbl_comm.SpeedFinePlus();
-    }
-    else
-    {
-      for(int32_t i = 0; i > jog_val; i--) grbl_comm.SpeedFineMinus();
-    }
-    jog_val = 0;
+    mpg_home_btn.SetColor(grbl_comm.GetMpgMode() ? COLOR_GREEN : COLOR_RED);
+  }
+  else
+  {
+    mpg_home_btn.SetColor(grbl_comm.GetMpgMode() ? COLOR_RED : COLOR_WHITE);
   }
 
-  // If SmartPendant is in control and state is IDLE or JOG - enable buttons
-  if(grbl_comm.IsInControl() && ((grbl_comm.GetState() == GrblComm::IDLE) || (grbl_comm.GetState() == GrblComm::JOG)))
+  // *** Run button text ***
+  if(grbl_comm.GetState() == GrblComm::RUN)
+  {
+    run_btn.SetString("Hold");
+  }
+  else
+  {
+    run_btn.SetString("Run");
+  }
+
+  // *** Stop button text ***
+  if(grbl_comm.GetState() == GrblComm::ALARM)
+  {
+    if(grbl_comm.GetStatusCode() == GrblComm::Status_NotAllowedCriticalEvent)
+      stop_btn.SetString("Reset");
+    else
+      stop_btn.SetString("Unlock");
+  }
+  else if((grbl_comm.GetState() == GrblComm::UNKNOWN) || (grbl_comm.GetState() == GrblComm::HOME))
+  {
+    stop_btn.SetString("Reset");
+  }
+  else
+  {
+    stop_btn.SetString("Stop");
+  }
+
+  // *** Enable/disable buttons based on control state ***
+  if(grbl_comm.IsInControl() && ((grbl_comm.GetState() == GrblComm::IDLE) ||
+                                  (grbl_comm.GetState() == GrblComm::JOG)))
   {
     x_mode_btn.Enable();
-    // Enable zero buttons for all axis
-    for(uint32_t i = 0u; i < NumberOf(zero_btn); i++)
-    {
-      zero_btn[i].Enable();
-    }
-    // Enable exhaust and air assist buttons
+    for(uint32_t i = 0u; i < NumberOf(zero_btn); i++) zero_btn[i].Enable();
     spindle_ctrl_btn.Enable();
     spindle_dir_btn.Enable();
   }
@@ -316,52 +350,75 @@ Result DirectControlScr::TimerExpired(uint32_t interval)
   {
     change_box.Hide();
     x_mode_btn.Disable();
-    // Disable zero buttons for all axis
-    for(uint32_t i = 0u; i < NumberOf(zero_btn); i++)
-    {
-      zero_btn[i].Disable();
-    }
-    // Disable laser aux buttons
+    for(uint32_t i = 0u; i < NumberOf(zero_btn); i++) zero_btn[i].Disable();
     spindle_ctrl_btn.Disable();
     spindle_dir_btn.Disable();
   }
 
-  // Return result
   return result;
 }
 
 // *****************************************************************************
-// ***   UnpressButtons function   *********************************************
-// *****************************************************************************
-void DirectControlScr::UnpressButtons(void)
-{
-  for(uint32_t i = 0u; i < NumberOf(scale_btn); i++)
-  {
-    scale_btn[i].SetPressed(false);
-  }
-}
-
-// *****************************************************************************
-// ***   ProcessCallback function   ********************************************
+// ***   ProcessCallback   *****************************************************
 // *****************************************************************************
 Result DirectControlScr::ProcessCallback(const void* ptr)
 {
   Result result = Result::RESULT_OK;
 
-  // Process Left & Right buttons
-  if((ptr == &left_btn) || (ptr == &right_btn))
+  // *** Navigation buttons ***
+  if(ptr == &prev_btn)
   {
-    result = Result::ERR_UNHANDLED_REQUEST; // For Application to handle it
+    Application::GetInstance().PrevScreen();
   }
-  else if(ptr == &middle_btn)
+  else if(ptr == &next_btn)
+  {
+    Application::GetInstance().NextScreen();
+  }
+  // *** MPG toggle ***
+  else if(ptr == &mpg_home_btn)
+  {
+    if(grbl_comm.GetMpgModeRequest())
+      grbl_comm.ReleaseControl();
+    else
+      grbl_comm.GainControl();
+  }
+  // *** Run / Hold ***
+  else if(ptr == &run_btn)
+  {
+    if(grbl_comm.GetState() != GrblComm::RUN)
+      grbl_comm.Run();
+    else
+      grbl_comm.Hold();
+  }
+  // *** Stop / Reset / Unlock ***
+  else if(ptr == &stop_btn)
+  {
+    if(grbl_comm.GetState() == GrblComm::ALARM)
+    {
+      if(grbl_comm.GetStatusCode() == GrblComm::Status_NotAllowedCriticalEvent)
+        grbl_comm.Reset();
+      else
+        grbl_comm.Unlock();
+    }
+    else if((grbl_comm.GetState() == GrblComm::UNKNOWN) || (grbl_comm.GetState() == GrblComm::HOME))
+    {
+      grbl_comm.Reset();
+    }
+    else
+    {
+      grbl_comm.Stop();
+    }
+  }
+  // *** FIRE test ***
+  else if(ptr == &fire_btn)
   {
     bool was_in_control = grbl_comm.GetMpgModeRequest();
     if(!was_in_control) grbl_comm.GainControl();
     uint32_t id = 0u;
     if(!fire_active)
     {
-      grbl_comm.CoolantFloodToggle(); // Exhaust on
-      grbl_comm.CoolantMistToggle();  // Air on
+      grbl_comm.CoolantFloodToggle(); // Exhaust on (M7)
+      grbl_comm.CoolantMistToggle();  // Air on (M8)
       grbl_comm.SendCmd("$32=0\r", id);
       grbl_comm.SendCmd("M3 S30\r", id);
       fire_active = true;
@@ -376,198 +433,134 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
     }
     if(!was_in_control) grbl_comm.ReleaseControl();
   }
-  // Process change box callback
+  // *** Change box callback ***
   else if(ptr == &change_box)
   {
     if(change_box.GetResult())
-    {
       grbl_comm.SetAxisPosition(change_box.GetId(), change_box.GetValue());
-    }
   }
-  // Process exhaust fan button
+  // *** Air assist ***
   else if(ptr == &spindle_ctrl_btn)
   {
-    grbl_comm.CoolantFloodToggle(); // Exhaust fan (M8/M9)
+    grbl_comm.CoolantFloodToggle(); // AIR = M8
   }
-  // Process air assist button
+  // *** Exhaust fan ***
   else if(ptr == &spindle_dir_btn)
   {
-    grbl_comm.CoolantMistToggle(); // Air assist (M7/M9)
+    grbl_comm.CoolantMistToggle(); // EXHAUST = M7
   }
   else
   {
+    // *** Scale buttons ***
     uint32_t i = 0u;
-    // Try to find scale button
     for(; i < NumberOf(scale_btn); i++)
     {
       if(ptr == &scale_btn[i])
       {
-        // Set unpressed state for all buttons
         UnpressButtons();
-        // Set pressed state for selected one
         scale_btn[i].SetPressed(true);
-        // Save scale to control
+        scale_btn[i].SetColor(COLOR_GREEN);
         scale = scale_val[i];
         break;
       }
     }
-    // If previous cycle didn't find button
+
     if(i == NumberOf(scale_btn))
     {
-      // Check axis data windows
-      for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
+      // *** DRO windows ***
+      for(uint32_t j = 0u; j < GrblComm::AXIS_CNT; j++)
       {
-        // If we tapped on already selected button
-        if((ptr == &dw[i]) && dw[i].IsSelected())
+        if((ptr == &dw[j]) && dw[j].IsSelected())
         {
-          // Setup object to change numerical parameters
-          change_box.Setup(grbl_comm.GetAxisName(i), grbl_comm.GetReportUnits(), dw[i].GetNumber(), -10000000, 10000000, grbl_comm.GetReportUnitsPrecision(i));
-          // Set AppTask
+          change_box.Setup(grbl_comm.GetAxisName(j), grbl_comm.GetReportUnits(),
+                           dw[j].GetNumber(), -10000000, 10000000,
+                           grbl_comm.GetReportUnitsPrecision(j));
           change_box.SetCallback(AppTask::GetCurrent());
-          // Save axis index as ID
-          change_box.SetId(i);
-          // Show change box
+          change_box.SetId(j);
           change_box.Show(10000u);
         }
-        else if(ptr == &dw[i])
+        else if(ptr == &dw[j])
         {
-          // Set border to red for all windows
-          for(uint32_t j = 0u; j < GrblComm::AXIS_CNT; j++)
-          {
-            dw[j].SetSelected(false);
-          }
-          // Unselect power data window
-          spindle_dw.SetSelected(false);
-          // Then set border to green for selected one
-          dw[i].SetSelected(true);
-          // Save axis to control
-          axis = (GrblComm::Axis_t)i;
-          // Update scale buttons
+          for(uint32_t k = 0u; k < GrblComm::AXIS_CNT; k++) dw[k].SetSelected(false);
+          dw[j].SetSelected(true);
+          axis = (GrblComm::Axis_t)j;
           UpdateScaleButtons();
-          // Break the cycle
           break;
         }
-        else if(ptr == &zero_btn[i])
+        else if(ptr == &zero_btn[j])
         {
-          grbl_comm.ZeroAxis((GrblComm::Axis_t)i);
+          grbl_comm.ZeroAxis((GrblComm::Axis_t)j);
         }
-      }
-      if(ptr == &spindle_dw)
-      {
-        // If speed override is not 100%
-        if(grbl_comm.GetSpeedOverride() != 100u)
-        {
-          // Set speed override to 100%
-          grbl_comm.SpeedReset();
-        }
-        // Select power data window
-        spindle_dw.SetSelected(true);
-        // Not an axis
-        axis = GrblComm::AXIS_CNT;
-        // Set border to red for all windows
-        for(uint32_t j = 0u; j < GrblComm::AXIS_CNT; j++)
-        {
-          dw[j].SetSelected(false);
-        }
-        // Update scale buttons
-        UpdateScaleButtons();
       }
     }
   }
 
-  // Return result
   return result;
 }
 
 // *****************************************************************************
-// ***   Private: ProcessEncoderCallback function   ****************************
+// ***   ProcessEncoderCallback   **********************************************
 // *****************************************************************************
 Result DirectControlScr::ProcessEncoderCallback(DirectControlScr* obj_ptr, void* ptr)
 {
   Result result = Result::ERR_NULL_PTR;
-
-  // Check pointer
   if(obj_ptr != nullptr)
   {
-    // Cast pointer to "this". Since we can't use non-static members as callback,
-    // we have to provide pinter to object.
     DirectControlScr& ths = *obj_ptr;
-    // Cast pointer itself to integer value
     int32_t enc_val = (int32_t)ptr;
-
-    // Save jogging value to send it later
     if(ths.axis < GrblComm::AXIS_CNT)
-    {
       ths.axis_jog_val[ths.axis] += enc_val;
-    }
-    else
-    {
-      ths.jog_val += enc_val;
-    }
-
-    // Set ok result
+    // No action when no axis selected (PWR OVR removed from home screen)
     result = Result::RESULT_OK;
   }
-
-  // Return result
   return result;
 }
 
 // *****************************************************************************
-// ***   Private: UpdateScaleButtons function   ********************************
+// ***   UnpressButtons   ******************************************************
+// *****************************************************************************
+void DirectControlScr::UnpressButtons(void)
+{
+  for(uint32_t i = 0u; i < NumberOf(scale_btn); i++)
+  {
+    scale_btn[i].SetPressed(false);
+    scale_btn[i].SetColor(COLOR_WHITE);
+  }
+}
+
+// *****************************************************************************
+// ***   UpdateScaleButtons   **************************************************
 // *****************************************************************************
 void DirectControlScr::UpdateScaleButtons()
 {
-  // Scale buttons
   for(uint32_t i = 0u; i < NumberOf(scale_btn); i++)
   {
-    // Clear scale_str
     memset(scale_str[i], 0, NumberOf(scale_str[i]));
 
-    // Check if it axis or laser power
-    if(axis < GrblComm::AXIS_CNT)
-    {
-      // Find appropriate scale settings
-      uint32_t idx = (grbl_comm.IsMetric() ? NVM::MPG_METRIC_FEED_1 : NVM::MPG_IMPERIAL_FEED_1);
-      // Check if axis is rotary and if it is - overwrite scale settings with rotary ones
-      if(grbl_comm.IsRotaryAxis(axis)) idx = NVM::MPG_ROTARY_FEED_1;
-      // Get scale
-      scale_val[i] = NVM::GetInstance().GetValue((NVM::Parameters)(idx + i));
-      // Create scale for the button
-      grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]), scale_val[i], grbl_comm.GetReportUnitsScaler(axis), grbl_comm.GetReportUnits(axis), grbl_comm.IsRotaryAxis(axis));
-    }
-    else // Power override mode - show metric jog scale values same as axis mode
-    {
-      uint32_t idx = (grbl_comm.IsMetric() ? NVM::MPG_METRIC_FEED_1 : NVM::MPG_IMPERIAL_FEED_1);
-      scale_val[i] = NVM::GetInstance().GetValue((NVM::Parameters)(idx + i));
-      grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]), scale_val[i], grbl_comm.GetReportUnitsScaler(GrblComm::AXIS_X), grbl_comm.GetReportUnits(GrblComm::AXIS_X), false);
-    }
+    // Laser-appropriate fixed scale values: 0.001, 0.010, 0.100, 1.000
+    static const uint32_t laser_scale[4] = {5u, 10u, 100u, 500u};
+    scale_val[i] = laser_scale[i];
+    grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]),
+      scale_val[i], grbl_comm.GetReportUnitsScaler(GrblComm::AXIS_X),
+      grbl_comm.GetReportUnits(GrblComm::AXIS_X), false);
 
-    // Replace space with new line between scale and units
+    // Replace space with newline
     for(uint8_t j = 0; j < NumberOf(scale_str[i]); j++)
     {
-      if(scale_str[i][j] == ' ')
-      {
-        scale_str[i][j] = '\n';
-        break;
-      }
+      if(scale_str[i][j] == ' ') { scale_str[i][j] = '\n'; break; }
     }
 
-    // Show button
     scale_btn[i].Show(100);
-    // Check if button is pressed
     if(scale_btn[i].GetPressed())
     {
-      // Set corresponding scale
+      scale_btn[i].SetColor(COLOR_GREEN);
       scale = scale_val[i];
     }
   }
 }
 
 // *****************************************************************************
-// ***   Private constructor   *************************************************
+// ***   Constructor   *********************************************************
 // *****************************************************************************
-DirectControlScr::DirectControlScr() : left_btn(Application::GetInstance().GetLeftButton()),
-                                       middle_btn(Application::GetInstance().GetMiddleButton()),
-                                       right_btn(Application::GetInstance().GetRightButton()),
-                                       change_box(Application::GetInstance().GetChangeValueBox()){};
+DirectControlScr::DirectControlScr() :
+  change_box(Application::GetInstance().GetChangeValueBox()) {}

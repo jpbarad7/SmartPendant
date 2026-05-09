@@ -395,6 +395,40 @@ void Application::UpdateMemoryInfo()
   mem_info.SetParams(mem_info_buf, display_drv.GetScreenW()/2 - mem_info.GetWidth()/2, 30, COLOR_WHITE, Font_6x8::GetInstance());
 }
 
+void Application::HideGlobalUI()
+{
+  header.Hide();
+  status_box.Hide();
+  state_str.Hide();
+  status_str.Hide();
+  pins_str.Hide();
+  mpg_btn.Hide();
+  left_btn.Hide();
+  right_btn.Hide();
+}
+
+void Application::ShowGlobalUI()
+{
+  header.Show(2000u);
+  status_box.Show(1000u);
+  state_str.Show(1001u);
+  status_str.Show(1002u);
+  pins_str.Show(1003u);
+  mpg_btn.Show(1000u);
+  left_btn.Show(102u);
+  right_btn.Show(102u);
+}
+
+void Application::NextScreen()
+{
+  ChangeScreen((uint8_t)((scr_idx + 1u) % scr_cnt));
+}
+
+void Application::PrevScreen()
+{
+  ChangeScreen((uint8_t)((scr_idx + scr_cnt - 1u) % scr_cnt));
+}
+
 // *****************************************************************************
 // ***   Private: ProcessButtonCallback function   *****************************
 // *****************************************************************************
@@ -483,8 +517,6 @@ void Application::InitHeader()
   scr[scr_cnt++] = &OverrideCtrlScr::GetInstance();
   header.SetText(scr_cnt, "GCODE SENDER", Font_12x16::GetInstance());
   scr[scr_cnt++] = &ProgramSender::GetInstance();
-  header.SetText(scr_cnt, "GCODE GENERATOR", Font_12x16::GetInstance());
-  scr[scr_cnt++] = &GCodeGeneratorScr::GetInstance();
   header.SetText(scr_cnt, "SETTINGS", Font_12x16::GetInstance());
   scr[scr_cnt++] = &SettingsScr::GetInstance();
   // Pages for screens (second call to resize to actual number of pages)

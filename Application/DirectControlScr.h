@@ -1,164 +1,96 @@
 //******************************************************************************
 //  @file DirectControlScr.h
-//  @author Nicolai Shlapunov
+//  @author Nicolai Shlapunov / JPB Laser modifications
 //
-//  @details DirectControlScr: User DirectControlScr Class, header
-//
-//  @copyright Copyright (c) 2023, Devtronic & Nicolai Shlapunov
-//             All rights reserved.
-//
-//  @section SUPPORT
-//
-//   Devtronic invests time and resources providing this open source code,
-//   please support Devtronic and open-source hardware/software by
-//   donations and/or purchasing products from Devtronic.
+//  @details DirectControlScr: Laser home screen - full screen self-contained layout
 //
 //******************************************************************************
 
 #ifndef DirectControlScr_h
 #define DirectControlScr_h
 
-// *****************************************************************************
-// ***   Includes   ************************************************************
-// *****************************************************************************
 #include "DevCfg.h"
 #include "DisplayDrv.h"
 #include "UiEngine.h"
-
 #include "IScreen.h"
 #include "DataWindow.h"
 #include "GrblComm.h"
 #include "InputDrv.h"
 #include "ChangeValueBox.h"
-
 #include "Version.h"
 
-// *****************************************************************************
-// ***   Local const variables   ***********************************************
-// *****************************************************************************
-
-// *****************************************************************************
-// ***   Defines   *************************************************************
-// *****************************************************************************
 #define BG_Z (100)
 
-// *****************************************************************************
-// ***   DirectControlScr Class   **********************************************
-// *****************************************************************************
 class DirectControlScr : public IScreen
 {
   public:
-    // *************************************************************************
-    // ***   Get Instance   ****************************************************
-    // *************************************************************************
     static DirectControlScr& GetInstance();
-
-    // *************************************************************************
-    // ***   Setup function   **************************************************
-    // *************************************************************************
     virtual Result Setup(int32_t y, int32_t height);
-
-    // *************************************************************************
-    // ***   Public: Show   ****************************************************
-    // *************************************************************************
     virtual Result Show();
-
-    // *************************************************************************
-    // ***   Public: Hide   ****************************************************
-    // *************************************************************************
     virtual Result Hide();
-
-    // *************************************************************************
-    // ***   Public: TimerExpired   ********************************************
-    // *************************************************************************
     virtual Result TimerExpired(uint32_t interval);
-
-    // *************************************************************************
-    // ***   Public: ProcessCallback   *****************************************
-    // *************************************************************************
     virtual Result ProcessCallback(const void* ptr);
 
   private:
-    static constexpr uint8_t BORDER_W = 4u;
+    static constexpr uint8_t  BORDER_W   = 4u;
+    static constexpr uint32_t DRO_MARGIN = BORDER_W * 2u; // extra space above/below DRO section
 
-    // String for version
-    String version;
-    // Version text with oscillator frequency
-    char ver_txt[40u] = {0};
-    // Value for speed
-    int32_t jog_val = 0;
-    // Fire test state
-    bool fire_active = false;
     // Jogging values
     int32_t axis_jog_val[GrblComm::AXIS_CNT] = {0};
-    // Jogging direction
     int32_t axis_jog_dir[GrblComm::AXIS_CNT] = {0};
 
     // Current selected axis
     GrblComm::Axis_t axis = GrblComm::AXIS_CNT;
-    // Scale to move axis
+    // Jog scale
     int32_t scale = 1u;
 
-    // String for caption
-    String axis_names[GrblComm::AXIS_CNT];
-    // Data windows to show DRO
+    // Axis name strings and DRO windows
+    String     axis_names[GrblComm::AXIS_CNT];
     DataWindow dw[GrblComm::AXIS_CNT];
-    // Buttons to set 0
-    UiButton zero_btn[GrblComm::AXIS_CNT];
-    // Buttons to change Radius/Diameter in Lathe Mode
+    UiButton   zero_btn[GrblComm::AXIS_CNT];
+
+    // X mode (lathe, not used in laser but kept for compatibility)
     UiButton x_mode_btn;
-    // String for X axis mode(Radius/Diameter)
-    String x_mode_str;
+    String   x_mode_str;
 
-    // Buttons to choose scale
+    // Scale buttons
     UiButton scale_btn[4u];
-    // Scale options(string)
-    char scale_str[NumberOf(scale_btn)][12u] = {0};
-    // Scale options(value)
-    uint32_t scale_val[NumberOf(scale_btn)] = {0};
+    char     scale_str[NumberOf(scale_btn)][12u] = {0};
+    uint32_t scale_val[NumberOf(scale_btn)]      = {0};
 
-    // Data windows to show spindle speed
-    DataWindow spindle_dw;
-    // String for spindle caption
-    String spindle_name;
-    // Buttons to on/off spindle
-    UiButton spindle_dir_btn;
-    UiButton spindle_ctrl_btn;
+    // Navigation bar (replaces global header on home screen)
+    UiButton prev_btn;        // < previous screen
+    UiButton next_btn;        // > next screen
+    String   hdr_state;       // machine state text
+    String   hdr_status_sub;  // machine status sub-text
 
-    // Soft Buttons
-    UiButton& left_btn;
-    UiButton& middle_btn;
-    UiButton& right_btn;
+    // Aux button row: AIR | EXHAUST | FIRE | MPG
+    UiButton spindle_ctrl_btn; // AIR  (M8)
+    UiButton spindle_dir_btn;  // EXHAUST (M7)
+    UiButton fire_btn;         // FIRE test
+    UiButton mpg_home_btn;     // MPG toggle
 
-    // Object to change numerical parameters
+    // Fire state
+    bool fire_active = false;
+
+    // Bottom row
+    UiButton run_btn;   // Run / Hold
+    UiButton stop_btn;  // Stop / Reset / Unlock
+
+    // Change value box (shared from Application)
     ChangeValueBox& change_box;
 
-    // Display driver instance
+    // Driver instances
     DisplayDrv& display_drv = DisplayDrv::GetInstance();
-    // GRBL Communication Interface instance
-    GrblComm& grbl_comm = GrblComm::GetInstance();
+    GrblComm&   grbl_comm   = GrblComm::GetInstance();
 
-    // Encoder callback entry
+    // Encoder callback
     InputDrv::CallbackListEntry enc_cble;
 
-    // *************************************************************************
-    // ***   Private: UnpressButtons function   ********************************
-    // *************************************************************************
     void UnpressButtons();
-
-    // *************************************************************************
-    // ***   Private: ProcessEncoderCallback function   ************************
-    // *************************************************************************
     static Result ProcessEncoderCallback(DirectControlScr* obj_ptr, void* ptr);
-
-    // *************************************************************************
-    // ***   Private: UpdateScaleButtons function   ****************************
-    // *************************************************************************
     void UpdateScaleButtons();
 
-    // *************************************************************************
-    // ***   Private constructor   *********************************************
-    // *************************************************************************
     DirectControlScr();
 };
 

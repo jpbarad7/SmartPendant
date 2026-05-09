@@ -186,6 +186,11 @@ class Application : public AppTask
     // *************************************************************************
     void DisableScreenChange() {header.Disable(); mpg_btn.Disable();}
 
+    void HideGlobalUI();
+    void ShowGlobalUI();
+    void NextScreen();
+    void PrevScreen();
+
   private:
     // Timer period
     static const uint32_t TASK_TIMER_PERIOD_MS = 20u;
