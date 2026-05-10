@@ -1,29 +1,14 @@
 //******************************************************************************
 //  @file SettingsScr.cpp
-//  @author Nicolai Shlapunov
+//  @author Nicolai Shlapunov / JPB Laser modifications
 //
-//  @details SettingsScr: User SettingsScr Class, implementation
-//
-//  @copyright Copyright (c) 2023, Devtronic & Nicolai Shlapunov
-//             All rights reserved.
-//
-//  @section SUPPORT
-//
-//   Devtronic invests time and resources providing this open source code,
-//   please support Devtronic and open-source hardware/software by
-//   donations and/or purchasing products from Devtronic.
+//  @details SettingsScr: Full-screen layout matching other screens.
 //
 //******************************************************************************
 
-// *****************************************************************************
-// ***   Includes   ************************************************************
-// *****************************************************************************
 #include "SettingsScr.h"
-
 #include "Application.h"
 
-// *****************************************************************************
-// ***   Get Instance   ********************************************************
 // *****************************************************************************
 SettingsScr& SettingsScr::GetInstance()
 {
@@ -32,42 +17,70 @@ SettingsScr& SettingsScr::GetInstance()
 }
 
 // *****************************************************************************
-// ***   SettingsScr Setup   ***************************************************
+// ***   Setup   ***************************************************************
 // *****************************************************************************
 Result SettingsScr::Setup(int32_t y, int32_t height)
 {
-  // Tabs for screens
-  tabs.SetParams(0, y, DisplayDrv::GetInstance().GetScreenW(), 40, 3u);
-  // General settings tab
-  tabs.SetText(0u, "GENERAL", nullptr, Font_10x18::GetInstance());
-  // MPG settings tab
-  tabs.SetText(1u, "MPG", nullptr, Font_10x18::GetInstance());
-  // Probe settings tab
-  tabs.SetText(2u, "PROBE", nullptr, Font_10x18::GetInstance());
-  // Set callback
-  tabs.SetCallback(AppTask::GetCurrent());
+  int32_t  scr_w         = display_drv.GetScreenW(); // 320
+  int32_t  scr_h         = display_drv.GetScreenH(); // 480
+  uint32_t window_height = Font_8x12::GetInstance().GetCharH() * 5u; // 60px
 
-  // Fill menu_items
-  for(uint32_t i = 0u; i < NumberOf(menu_items); i++)
-  {
-    menu_items[i].text = str[i];
-    menu_items[i].n = sizeof(str[i]);
-  }
-  // Set callback
-  menu.SetCallback(AppTask::GetCurrent(), this, reinterpret_cast<CallbackPtr>(ProcessMenuCallback), nullptr);
-  // Setup menu - reduce height to make room for shutdown button
-  menu.Setup(0, y + tabs.GetHeight(), display_drv.GetScreenW(), height - tabs.GetHeight() - SHUTDOWN_BTN_H - 4u);
+  // *** Nav bar — same geometry as all other screens ***
+  int32_t dro_start_x = scr_w / 6;
+  int32_t dro_end_x   = dro_start_x + (scr_w - BORDER_W * 2) * 4 / 6;
+  int32_t arrow_w     = scr_w - dro_end_x - BORDER_W * 2; // 51px
 
-  // Shutdown button - sits at the bottom of the screen
-  shutdown_btn.SetParams("SHUT DOWN", 0, y + height - SHUTDOWN_BTN_H, display_drv.GetScreenW(), SHUTDOWN_BTN_H, true);
+  int32_t total_h = 7 * (int32_t)window_height + 7 * BORDER_W + BORDER_W * 2; // 456
+  int32_t nav_y   = (scr_h - total_h) / 2; // 12
+  int32_t nav_end = nav_y + (int32_t)window_height; // 72
+
+  prev_btn.SetParams("<", BORDER_W, nav_y, arrow_w, window_height, true);
+  prev_btn.SetCallback(AppTask::GetCurrent());
+
+  next_btn.SetParams(">", scr_w - BORDER_W - arrow_w, nav_y, arrow_w, window_height, true);
+  next_btn.SetCallback(AppTask::GetCurrent());
+
+  title_str.SetParams("SETTINGS", 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
+  title_str.Move((scr_w - title_str.GetWidth()) / 2,
+                 nav_y + ((int32_t)window_height - Font_12x16::GetInstance().GetCharH()) / 2);
+
+  // *** Shutdown button — same y and height as RUN/STOP on other screens ***
+  int32_t shutdown_y = nav_y + total_h - (int32_t)window_height; // 408
+  int32_t shutdown_h = (int32_t)window_height;                    // 60 — matches other screens
+
+  shutdown_btn.SetParams("SHUT DOWN", 0, shutdown_y, scr_w, shutdown_h, true);
   shutdown_btn.SetFont(Font_12x16::GetInstance());
   shutdown_btn.SetCallback(AppTask::GetCurrent());
   shutdown_btn.SetColor(COLOR_WHITE);
 
-  // Create and set
+  // Cover box masks shared soft buttons visible below shutdown button
+  int32_t cover_y = shutdown_y + shutdown_h;
+  int32_t cover_h = scr_h - cover_y;
+  cover_box.SetParams(0, cover_y, scr_w, cover_h, COLOR_DARKGREY, true);
+
+  // *** Tabs below nav bar ***
+  int32_t tabs_y = nav_end + BORDER_W; // 76
+  tabs.SetParams(0, tabs_y, scr_w, 40, 3u);
+  tabs.SetText(0u, "GENERAL", nullptr, Font_10x18::GetInstance());
+  tabs.SetText(1u, "MPG",     nullptr, Font_10x18::GetInstance());
+  tabs.SetText(2u, "PROBE",   nullptr, Font_10x18::GetInstance());
+  tabs.SetCallback(AppTask::GetCurrent());
+
+  // *** Menu fills space between tabs and shutdown button ***
+  int32_t menu_y = tabs_y + 40 + BORDER_W; // 120
+  int32_t menu_h = shutdown_y - BORDER_W - menu_y; // 284
+
+  for(uint32_t i = 0u; i < NumberOf(menu_items); i++)
+  {
+    menu_items[i].text = str[i];
+    menu_items[i].n    = sizeof(str[i]);
+  }
+  menu.SetCallback(AppTask::GetCurrent(), this,
+                   reinterpret_cast<CallbackPtr>(ProcessMenuCallback), nullptr);
+  menu.Setup(0, menu_y, scr_w, menu_h);
+
   UpdateStrings();
 
-  // All good
   return Result::RESULT_OK;
 }
 
@@ -76,28 +89,39 @@ Result SettingsScr::Setup(int32_t y, int32_t height)
 // *****************************************************************************
 Result SettingsScr::Show()
 {
-  // Show tabs
-  tabs.Show(2000);
+  // Nav bar at z=3000 — above Application header (z=2000) and tabs (z=100)
+  prev_btn.Show(3000);
+  next_btn.Show(3000);
+  title_str.Show(3000);
+
+  // Tabs and menu at z=100
+  tabs.Show(100);
 
   if(!Application::GetInstance().GetMsgBox().IsShow())
-  {
-    // Show menu
     menu.Show(100);
-  }
 
-  // Show shutdown button
+  // Shutdown button at z=3000 — same level as nav bar
   shutdown_active = false;
   shutdown_btn.SetString("SHUT DOWN");
   shutdown_btn.SetColor(COLOR_WHITE);
-  shutdown_btn.Show(100);
+  shutdown_btn.Show(3000);
+  cover_box.Show(2500);
 
-  // Update string on display
   UpdateStrings();
 
-  // Set callback handler for left and right buttons
-  InputDrv::GetInstance().AddButtonsCallbackHandler(AppTask::GetCurrent(), reinterpret_cast<CallbackPtr>(ProcessButtonCallback), this, InputDrv::BTNM_LEFT_DOWN | InputDrv::BTNM_RIGHT_DOWN, btn_cble);
+  // Physical button callback for tab switching
+  // Physical buttons disabled
+  // InputDrv::GetInstance().AddButtonsCallbackHandler(AppTask::GetCurrent(),
+  //   reinterpret_cast<CallbackPtr>(ProcessButtonCallback), this,
+  //   InputDrv::BTNM_LEFT_DOWN | InputDrv::BTNM_RIGHT_DOWN, btn_cble);
 
-  // All good
+  // Hide global UI LAST — ensures Application header and shared buttons
+  // are hidden even if tabs.Show() or menu.Show() re-showed them
+  Application::GetInstance().HideGlobalUI();
+  Application::GetInstance().GetLeftButton().Hide();
+  Application::GetInstance().GetRightButton().Hide();
+  Application::GetInstance().GetMiddleButton().Hide();
+
   return Result::RESULT_OK;
 }
 
@@ -106,74 +130,67 @@ Result SettingsScr::Show()
 // *****************************************************************************
 Result SettingsScr::Hide()
 {
-  // Delete buttons callback handler
-  InputDrv::GetInstance().DeleteButtonsCallbackHandler(btn_cble);
+  // InputDrv::GetInstance().DeleteButtonsCallbackHandler(btn_cble);
 
-  // Hide menu
+  prev_btn.Hide();
+  next_btn.Hide();
+  title_str.Hide();
+
   menu.Hide();
-  // Hide tabs
   tabs.Hide();
-  // Hide shutdown button
   shutdown_btn.Hide();
+  cover_box.Hide();
 
-  // Save data into EEPROM after exit the screen
   nvm.WriteData();
 
-  // All good
+  Application::GetInstance().ShowGlobalUI();
+
   return Result::RESULT_OK;
 }
 
 // *****************************************************************************
-// ***   TimerExpired function   ***********************************************
+// ***   TimerExpired   ********************************************************
 // *****************************************************************************
 Result SettingsScr::TimerExpired(uint32_t interval)
 {
-  // Update shutdown button color based on state
-  if(shutdown_active)
-  {
-    shutdown_btn.SetColor(COLOR_GREEN);
-  }
-  else
-  {
-    shutdown_btn.SetColor(COLOR_WHITE);
-  }
-
-  // Return ok - we don't check semaphore give error, because we don't need to.
+  shutdown_btn.SetColor(shutdown_active ? COLOR_GREEN : COLOR_WHITE);
   return Result::RESULT_OK;
 }
 
 // *****************************************************************************
-// ***   ProcessCallback function   ********************************************
+// ***   ProcessCallback   *****************************************************
 // *****************************************************************************
 Result SettingsScr::ProcessCallback(const void* ptr)
 {
-  // Process shutdown button
-  if(ptr == &shutdown_btn)
+  if(ptr == &prev_btn)
+  {
+    Application::GetInstance().PrevScreen();
+  }
+  else if(ptr == &next_btn)
+  {
+    Application::GetInstance().NextScreen();
+  }
+  else if(ptr == &shutdown_btn)
   {
     if(!shutdown_active)
     {
       uint32_t id = 0u;
-      // Gain control if not already in control
       bool was_in_control = grbl_comm.GetMpgModeRequest();
       if(!was_in_control)
       {
         grbl_comm.GainControl();
         vTaskDelay(500u / portTICK_PERIOD_MS);
       }
-      // Turn off laser and coolants first
       grbl_comm.SendRealTimeCmd(GrblComm::CMD_STOP);
       grbl_comm.SendCmd("M9\r", id);
-      // Ensure PB10 is HIGH first, then pull LOW to trigger QT-PY shutdown
       grbl_comm.SendCmd("M64 P0\r", id);
       grbl_comm.SendCmd("M65 P0\r", id);
-      // Update button state
       shutdown_active = true;
       shutdown_btn.SetString("SAFE TO SHUT DOWN");
       shutdown_btn.SetColor(COLOR_GREEN);
     }
     else
     {
-      // Cancel shutdown - restore PB10 HIGH
       uint32_t id = 0u;
       grbl_comm.SendCmd("M64 P0\r", id);
       shutdown_active = false;
@@ -181,81 +198,60 @@ Result SettingsScr::ProcessCallback(const void* ptr)
       shutdown_btn.SetColor(COLOR_WHITE);
     }
   }
-  // Process tabs
   else if(ptr == &tabs)
   {
-    // Populate menu with global variables
     UpdateStrings();
     menu.Show(100);
+    Application::GetInstance().GetLeftButton().Hide();
+    Application::GetInstance().GetRightButton().Hide();
+    Application::GetInstance().GetMiddleButton().Hide();
   }
-  // Process change box callback
   else if(ptr == &change_box)
   {
-    // Update variable and strings only if user pressed "OK" button
     if(change_box.GetResult())
     {
-      // MPG tab
       if(tabs.GetSelectedTab() == MPG_TAB)
-      {
-        // Save value as is since we have separate values for metric and imperial
         nvm.SetValue((NVM::Parameters)(change_box.GetId() + NVM::MPG_METRIC_FEED_1), change_box.GetValue());
-      }
-      // Probe tab
       else if(tabs.GetSelectedTab() == PROBE_TAB)
-      {
-        // Save value - probe parameters always saved as metric
-        nvm.SetValue((NVM::Parameters)(change_box.GetId() + NVM::PROBE_SEARCH_FEED), grbl_comm.ConvertUnitsToMetric(change_box.GetValue()));
-      }
-      else
-      {
-        ; // Do nothing - MISRA rule
-      }
-      // Update strings on display
+        nvm.SetValue((NVM::Parameters)(change_box.GetId() + NVM::PROBE_SEARCH_FEED),
+                     grbl_comm.ConvertUnitsToMetric(change_box.GetValue()));
+      else { ; }
       UpdateStrings();
     }
   }
-  // Process message box with an error
+
   if(ptr == &Application::GetInstance().GetMsgBox())
   {
-    // Show menu
     menu.Show(100);
+    Application::GetInstance().GetLeftButton().Hide();
+    Application::GetInstance().GetRightButton().Hide();
+    Application::GetInstance().GetMiddleButton().Hide();
   }
-  else
-  {
-    ; // Do nothing - MISRA rule
-  }
+  else { ; }
 
-  // Always good
   return Result::RESULT_OK;
 }
 
 // *****************************************************************************
-// ***   Private: ProcessMenuCallback function   *******************************
+// ***   ProcessMenuCallback   *************************************************
 // *****************************************************************************
 Result SettingsScr::ProcessMenuCallback(SettingsScr* obj_ptr, void* ptr)
 {
   Result result = Result::ERR_NULL_PTR;
 
-  // Check pointer
   if(obj_ptr != nullptr)
   {
-    // Cast pointer to "this". Since we can't use non-static members as callback,
-    // we have to provide pinter to object.
     SettingsScr& ths = *obj_ptr;
-    // Convert pointer to index
     uint32_t idx = (uint32_t)ptr;
 
-    // General tab
     if(ths.tabs.GetSelectedTab() == GENERAL_TAB)
     {
-      // Convert menu index to NVM index
       uint32_t nvm_idx = idx + NVM::TX_CONTROL;
-
       if(nvm_idx == NVM::TX_CONTROL)
       {
-        uint8_t val = ths.nvm.GetCtrlTx() + 1u;    // Get current value and increment it by 1
-        if(val >= GrblComm::CTRL_TX_CNT) val = 0u; // Check overflow
-        ths.nvm.SetCtrlTx(val);                    // Store new value
+        uint8_t val = ths.nvm.GetCtrlTx() + 1u;
+        if(val >= GrblComm::CTRL_TX_CNT) val = 0u;
+        ths.nvm.SetCtrlTx(val);
       }
       else if(nvm_idx == NVM::SCREEN_INVERT)
       {
@@ -263,210 +259,130 @@ Result SettingsScr::ProcessMenuCallback(SettingsScr* obj_ptr, void* ptr)
         ths.display_drv.InvertDisplay(ths.nvm.GetValue(NVM::SCREEN_INVERT));
       }
       else if(nvm_idx == NVM::AUTO_MPG_ON_START)
-      {
         ths.nvm.SetValue(NVM::AUTO_MPG_ON_START, !ths.nvm.GetValue(NVM::AUTO_MPG_ON_START));
-      }
       else if(nvm_idx == NVM::SAVE_SCRIPT_RESULT)
-      {
         ths.nvm.SetValue(NVM::SAVE_SCRIPT_RESULT, !ths.nvm.GetValue(NVM::SAVE_SCRIPT_RESULT));
-      }
-      else
-      {
-        ; // Do nothing - MISRA rule
-      }
+      else { ; }
     }
-    // MPG tab
     else if(ths.tabs.GetSelectedTab() == MPG_TAB)
     {
-      // Convert menu index to NVM index
       uint32_t nvm_idx = idx + NVM::MPG_METRIC_FEED_1;
-      // Units and precision variables
       const char* units = nullptr;
       uint32_t precision = 0;
-
       if((nvm_idx >= NVM::MPG_METRIC_FEED_1) && (nvm_idx <= NVM::MPG_METRIC_FEED_4))
-      {
-        units = ths.grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_METRIC);
-        precision = ths.grbl_comm.GetUnitsPrecision(GrblComm::MEASUREMENT_SYSTEM_METRIC);
-      }
+      { units = ths.grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_METRIC); precision = ths.grbl_comm.GetUnitsPrecision(GrblComm::MEASUREMENT_SYSTEM_METRIC); }
       else if((nvm_idx >= NVM::MPG_IMPERIAL_FEED_1) && (nvm_idx <= NVM::MPG_IMPERIAL_FEED_4))
-      {
-        units = ths.grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL);
-        precision = ths.grbl_comm.GetUnitsPrecision(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL);
-      }
+      { units = ths.grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL); precision = ths.grbl_comm.GetUnitsPrecision(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL); }
       else if((nvm_idx >= NVM::MPG_ROTARY_FEED_1) && (nvm_idx <= NVM::MPG_ROTARY_FEED_4))
-      {
-        units = ths.grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_ROTARY);
-        precision = ths.grbl_comm.GetUnitsPrecision(GrblComm::MEASUREMENT_SYSTEM_ROTARY);
-      }
-      else
-      {
-        ; // Do nothing - MISRA rule
-      }
-
-      // Show change box only if index is found
+      { units = ths.grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_ROTARY); precision = ths.grbl_comm.GetUnitsPrecision(GrblComm::MEASUREMENT_SYSTEM_ROTARY); }
+      else { ; }
       if(units != nullptr)
       {
-        // Setup object to change numerical parameters, title scale set to 1
         ths.change_box.Setup(ths.menu_strings[idx], units, ths.nvm.GetValue((NVM::Parameters)(idx + NVM::MPG_METRIC_FEED_1)), 1, 10000, precision, 1u);
-        // Set AppTask
         ths.change_box.SetCallback(AppTask::GetCurrent());
-        // Save axis index as ID
         ths.change_box.SetId(idx);
-        // Show change box
         ths.change_box.Show(10000u);
       }
     }
-    // Probe tab
     else if(ths.tabs.GetSelectedTab() == PROBE_TAB)
     {
-      // Convert menu index to NVM index
       uint32_t nvm_idx = idx + NVM::PROBE_SEARCH_FEED;
-      // Units and precision variables
       const char* units = nullptr;
       uint32_t precision = 0;
-
       if((nvm_idx == NVM::PROBE_BALL_TIP) || (nvm_idx == NVM::PROBE_POS_DEVIATION))
-      {
-        units = ths.grbl_comm.GetReportUnits();
-        precision = ths.grbl_comm.GetReportUnitsPrecision();
-      }
+      { units = ths.grbl_comm.GetReportUnits(); precision = ths.grbl_comm.GetReportUnitsPrecision(); }
       else if((nvm_idx == NVM::PROBE_SEARCH_FEED) || (nvm_idx == NVM::PROBE_LOCK_FEED))
-      {
-        units = ths.grbl_comm.GetReportSpeedUnits();
-        precision = 0;
-      }
-      else
-      {
-        ; // Do nothing - MISRA rule
-      }
-
-      // Show change box only if index is found
+      { units = ths.grbl_comm.GetReportSpeedUnits(); precision = 0; }
+      else { ; }
       if(units != nullptr)
       {
-        // Setup object to change numerical parameters, title scale set to 1
-        ths.change_box.Setup(ths.menu_strings[idx], units, ths.grbl_comm.ConvertMetricToUnits(ths.nvm.GetValue((NVM::Parameters)(idx + NVM::PROBE_SEARCH_FEED))) , 1, 10000, precision, 1u);
-        // Set AppTask
+        ths.change_box.Setup(ths.menu_strings[idx], units, ths.grbl_comm.ConvertMetricToUnits(ths.nvm.GetValue((NVM::Parameters)(idx + NVM::PROBE_SEARCH_FEED))), 1, 10000, precision, 1u);
         ths.change_box.SetCallback(AppTask::GetCurrent());
-        // Save axis index as ID
         ths.change_box.SetId(idx);
-        // Show change box
         ths.change_box.Show(10000u);
       }
     }
-    else
-    {
-      ; // Do nothing - MISRA rule
-    }
+    else { ; }
 
-    // Update string on display
     ths.UpdateStrings();
-
-    // Set ok result
     result = Result::RESULT_OK;
   }
 
-  // Return result
   return result;
 }
 
 // *****************************************************************************
-// ***   Private: ProcessButtonCallback function   *****************************
+// ***   ProcessButtonCallback   ***********************************************
 // *****************************************************************************
 Result SettingsScr::ProcessButtonCallback(SettingsScr* obj_ptr, void* ptr)
 {
   Result result = Result::ERR_NULL_PTR;
-
-  // Check pointer
   if(obj_ptr != nullptr)
   {
-    // Cast pointer to "this". Since we can't use non-static members as callback,
-    // we have to provide pinter to object.
     SettingsScr& ths = *obj_ptr;
-    // Get pressed button
     InputDrv::ButtonCallbackData btn = *((InputDrv::ButtonCallbackData*)ptr);
-
-    // Change tab on button release only
     if((ths.tabs.IsEnabled()) && (btn.state == false))
     {
-      // Buttons to switch tabs
       if(btn.btn == InputDrv::BTN_LEFT_DOWN)
-      {
         ths.tabs.SetSelectedTab(ths.tabs.GetSelectedTab() - 1u);
-      }
       else if(btn.btn == InputDrv::BTN_RIGHT_DOWN)
-      {
         ths.tabs.SetSelectedTab(ths.tabs.GetSelectedTab() + 1u);
-      }
-      else
-      {
-        ; // Do nothing - MISRA rule
-      }
-
-      // Update string on display
+      else { ; }
       ths.UpdateStrings();
     }
-
-    // Set ok result
     result = Result::RESULT_OK;
   }
-
-  // Return result
   return result;
 }
 
 // *****************************************************************************
-// ***   Private: UpdateStrings function   *************************************
+// ***   UpdateStrings   *******************************************************
 // *****************************************************************************
 void SettingsScr::UpdateStrings(void)
 {
   char tmp_str[16u] = {0};
-  // Count for menu
   uint32_t cnt = 0;
-  // General tab
+
   if(tabs.GetSelectedTab() == GENERAL_TAB)
   {
-    // ORDER OF STRINGS IN THIS ARRAY MUST EXACT MATCHED TO NVM::Parameters
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::TX_CONTROL], (nvm.GetCtrlTx() == GrblComm::CTRL_GPIO_PIN) ? "dedicated pin" : (nvm.GetCtrlTx() == GrblComm::CTRL_SW_COMMAND) ? "sw command" : (nvm.GetCtrlTx() == GrblComm::CTRL_PIN_AND_SW_CMD) ? "pin & sw cmd": "full control");
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::SCREEN_INVERT], nvm.GetValue(NVM::SCREEN_INVERT) ? "inverted" : "normal");
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::AUTO_MPG_ON_START], nvm.GetValue(NVM::AUTO_MPG_ON_START) ? "enabled" : "disabled");
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::SAVE_SCRIPT_RESULT], nvm.GetValue(NVM::SAVE_SCRIPT_RESULT) ? "enabled" : "disabled");
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::TX_CONTROL],
+      (nvm.GetCtrlTx() == GrblComm::CTRL_GPIO_PIN)       ? "dedicated pin" :
+      (nvm.GetCtrlTx() == GrblComm::CTRL_SW_COMMAND)     ? "sw command"    :
+      (nvm.GetCtrlTx() == GrblComm::CTRL_PIN_AND_SW_CMD) ? "pin & sw cmd"  : "full control");
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::SCREEN_INVERT],      nvm.GetValue(NVM::SCREEN_INVERT)      ? "inverted"  : "normal");
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::AUTO_MPG_ON_START],  nvm.GetValue(NVM::AUTO_MPG_ON_START)  ? "enabled"   : "disabled");
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::SAVE_SCRIPT_RESULT], nvm.GetValue(NVM::SAVE_SCRIPT_RESULT) ? "enabled"   : "disabled");
   }
-  // MPG tab
   else if(tabs.GetSelectedTab() == MPG_TAB)
   {
-    // ORDER OF STRINGS IN THIS ARRAY MUST EXACT MATCHED TO NVM::Parameters
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_METRIC_FEED_1], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_METRIC_FEED_1), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_METRIC), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_METRIC)));
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_METRIC_FEED_2], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_METRIC_FEED_2), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_METRIC), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_METRIC)));
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_METRIC_FEED_3], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_METRIC_FEED_3), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_METRIC), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_METRIC)));
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_METRIC_FEED_4], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_METRIC_FEED_4), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_METRIC), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_METRIC)));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_METRIC_FEED_1],   grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_METRIC_FEED_1),   grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_METRIC),   grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_METRIC)));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_METRIC_FEED_2],   grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_METRIC_FEED_2),   grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_METRIC),   grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_METRIC)));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_METRIC_FEED_3],   grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_METRIC_FEED_3),   grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_METRIC),   grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_METRIC)));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_METRIC_FEED_4],   grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_METRIC_FEED_4),   grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_METRIC),   grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_METRIC)));
     menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_IMPERIAL_FEED_1], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_IMPERIAL_FEED_1), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL)));
     menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_IMPERIAL_FEED_2], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_IMPERIAL_FEED_2), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL)));
     menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_IMPERIAL_FEED_3], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_IMPERIAL_FEED_3), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL)));
     menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_IMPERIAL_FEED_4], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_IMPERIAL_FEED_4), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_IMPERIAL)));
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_ROTARY_FEED_1], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_ROTARY_FEED_1), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_ROTARY), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_ROTARY)));
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_ROTARY_FEED_2], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_ROTARY_FEED_2), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_ROTARY), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_ROTARY)));
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_ROTARY_FEED_3], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_ROTARY_FEED_3), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_ROTARY), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_ROTARY)));
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_ROTARY_FEED_4], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_ROTARY_FEED_4), grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_ROTARY), grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_ROTARY)));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_ROTARY_FEED_1],   grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_ROTARY_FEED_1),   grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_ROTARY),   grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_ROTARY)));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_ROTARY_FEED_2],   grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_ROTARY_FEED_2),   grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_ROTARY),   grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_ROTARY)));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_ROTARY_FEED_3],   grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_ROTARY_FEED_3),   grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_ROTARY),   grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_ROTARY)));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::MPG_ROTARY_FEED_4],   grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), nvm.GetValue(NVM::MPG_ROTARY_FEED_4),   grbl_comm.GetUnitsScaler(GrblComm::MEASUREMENT_SYSTEM_ROTARY),   grbl_comm.GetUnits(GrblComm::MEASUREMENT_SYSTEM_ROTARY)));
   }
-  // Probe tab
   else if(tabs.GetSelectedTab() == PROBE_TAB)
   {
-    // ORDER OF STRINGS IN THIS ARRAY MUST EXACT MATCHED TO NVM::Parameters
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::PROBE_SEARCH_FEED],   grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), grbl_comm.ConvertMetricToUnits(nvm.GetValue(NVM::PROBE_SEARCH_FEED)), grbl_comm.GetReportSpeedScaler(), grbl_comm.GetReportSpeedUnits()));
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::PROBE_LOCK_FEED],     grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), grbl_comm.ConvertMetricToUnits(nvm.GetValue(NVM::PROBE_LOCK_FEED)), grbl_comm.GetReportSpeedScaler(), grbl_comm.GetReportSpeedUnits()));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::PROBE_SEARCH_FEED],   grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), grbl_comm.ConvertMetricToUnits(nvm.GetValue(NVM::PROBE_SEARCH_FEED)),   grbl_comm.GetReportSpeedScaler(), grbl_comm.GetReportSpeedUnits()));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::PROBE_LOCK_FEED],     grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), grbl_comm.ConvertMetricToUnits(nvm.GetValue(NVM::PROBE_LOCK_FEED)),     grbl_comm.GetReportSpeedScaler(), grbl_comm.GetReportSpeedUnits()));
     menu.CreateString(menu_items[cnt++], menu_strings[NVM::PROBE_POS_DEVIATION], grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), grbl_comm.ConvertMetricToUnits(nvm.GetValue(NVM::PROBE_POS_DEVIATION)), grbl_comm.GetReportUnitsScaler(), grbl_comm.GetReportUnits()));
-    menu.CreateString(menu_items[cnt++], menu_strings[NVM::PROBE_BALL_TIP],      grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), grbl_comm.ConvertMetricToUnits(nvm.GetValue(NVM::PROBE_BALL_TIP)), grbl_comm.GetReportUnitsScaler(), grbl_comm.GetReportUnits()));
+    menu.CreateString(menu_items[cnt++], menu_strings[NVM::PROBE_BALL_TIP],      grbl_comm.ValueToStringWithScalerAndUnits(tmp_str, NumberOf(tmp_str), grbl_comm.ConvertMetricToUnits(nvm.GetValue(NVM::PROBE_BALL_TIP)),      grbl_comm.GetReportUnitsScaler(), grbl_comm.GetReportUnits()));
   }
-  else
-  {
-    ; // Do nothing - MISRA rule
-  }
-  // Set menu count to match numbers of items on the tab
+  else { ; }
+
   menu.SetCount(cnt);
 }
 
-// ******************************************************************************
-// ***   Private constructor   **************************************************
-// ******************************************************************************
-SettingsScr::SettingsScr() : menu(menu_items, NumberOf(menu_items)), change_box(Application::GetInstance().GetChangeValueBox()) {};
+// *****************************************************************************
+// ***   Constructor   *********************************************************
+// *****************************************************************************
+SettingsScr::SettingsScr() :
+  menu(menu_items, NumberOf(menu_items)),
+  change_box(Application::GetInstance().GetChangeValueBox()) {}

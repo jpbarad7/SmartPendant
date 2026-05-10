@@ -68,8 +68,8 @@ Result Application::Setup()
   status_str.Show(1002u);
   pins_str.Show(1003u);
 
-  // Set callback handler for left and right buttons
-  input_drv.AddButtonsCallbackHandler(this, reinterpret_cast<CallbackPtr>(ProcessButtonCallback), this, InputDrv::BTNM_USR | InputDrv::BTNM_LEFT | InputDrv::BTNM_RIGHT, btn_cble);
+  // Physical buttons disabled - pendant uses touchscreen navigation only
+  // input_drv.AddButtonsCallbackHandler(this, reinterpret_cast<CallbackPtr>(ProcessButtonCallback), this, InputDrv::BTNM_USR | InputDrv::BTNM_LEFT | InputDrv::BTNM_RIGHT, btn_cble);
 
   // Set Soft Buttons parameters
   InitSoftButtons();
