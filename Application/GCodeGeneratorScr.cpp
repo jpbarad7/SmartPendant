@@ -69,10 +69,7 @@ Result GCodeGeneratorScr::Setup(int32_t y, int32_t height)
 // *****************************************************************************
 Result GCodeGeneratorScr::Show()
 {
-  // Show free memory info
-  Application::GetInstance().ShowMemoryInfo();
-
-  // Show tabs
+   // Show tabs
   tabs.Show(2000);
 
   // If we don't have loaded script - open "Scripts" tab
@@ -89,9 +86,6 @@ Result GCodeGeneratorScr::Show()
 // *****************************************************************************
 Result GCodeGeneratorScr::Hide()
 {
-  // Hide free memory info
-  Application::GetInstance().HideMemoryInfo();
-
   // Hide change box if it on the screen now
   change_box.Hide();
   // Hide menu
@@ -578,8 +572,6 @@ char* GCodeGeneratorScr::AllocateDataBuffer(uint32_t size)
     // Add null-terminator to the first element
     p_text[0] = '\0';
   }
-  // Update free memory info
-  Application::GetInstance().UpdateMemoryInfo();
   // Return result
   return p_text;
 }
@@ -601,8 +593,6 @@ void GCodeGeneratorScr::ReleaseDataPointer()
   interpreter.SetPgmBuffer(nullptr, 0);
   // Clear loaded script tab caption
   tabs.SetText(0u, "----", nullptr, Font_10x18::GetInstance());
-  // Update free memory info
-  Application::GetInstance().UpdateMemoryInfo();
 }
 
 // *****************************************************************************

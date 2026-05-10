@@ -1,31 +1,19 @@
 //******************************************************************************
 //  @file ProgramSender.cpp
-//  @author Nicolai Shlapunov
+//  @author Nicolai Shlapunov / JPB Laser modifications
 //
-//  @details ProgramSender: User ProgramSender Class, implementation
-//
-//  @copyright Copyright (c) 2016, Devtronic & Nicolai Shlapunov
-//             All rights reserved.
-//
-//  @section SUPPORT
-//
-//   Devtronic invests time and resources providing this open source code,
-//   please support Devtronic and open-source hardware/software by
-//   donations and/or purchasing products from Devtronic.
+//  @details ProgramSender: G-code file sender.
+//           Full-screen self-contained layout matching other screens.
+//           Tap text area to open file browser.
 //
 //******************************************************************************
 
-// *****************************************************************************
-// ***   Includes   ************************************************************
-// *****************************************************************************
 #include "ProgramSender.h"
 #include "Application.h"
 
 #include "fatfs.h"
-#include <cctype> // For tolower()
+#include <cctype>
 
-// *****************************************************************************
-// ***   Get Instance   ********************************************************
 // *****************************************************************************
 ProgramSender& ProgramSender::GetInstance()
 {
@@ -34,53 +22,95 @@ ProgramSender& ProgramSender::GetInstance()
 }
 
 // *****************************************************************************
-// ***   ProgramSender Setup   *************************************************
+// ***   Setup   ***************************************************************
 // *****************************************************************************
 Result ProgramSender::Setup(int32_t y, int32_t height)
 {
-  constexpr int32_t CTRL_HEIGHT = 40;
+  int32_t  scr_w         = display_drv.GetScreenW(); // 320
+  int32_t  scr_h         = display_drv.GetScreenH(); // 480
+  uint32_t window_height = Font_8x12::GetInstance().GetCharH() * 5u; // 60px
+
+  // *** Nav bar — same centering as other screens ***
+  int32_t total_h = 7 * (int32_t)window_height + 7 * BORDER_W + BORDER_W * 2; // 456
+  int32_t nav_y   = (scr_h - total_h) / 2; // 12
+  int32_t nav_end = nav_y + (int32_t)window_height; // 72
+
+  int32_t dro_start_x = scr_w / 6;
+  int32_t dro_end_x   = dro_start_x + (scr_w - BORDER_W * 2) * 4 / 6;
+  int32_t arrow_w     = scr_w - dro_end_x - BORDER_W * 2; // 51px
+
+  prev_btn.SetParams("<", BORDER_W, nav_y, arrow_w, window_height, true);
+  prev_btn.SetCallback(AppTask::GetCurrent());
+
+  next_btn.SetParams(">", scr_w - BORDER_W - arrow_w, nav_y, arrow_w, window_height, true);
+  next_btn.SetCallback(AppTask::GetCurrent());
+
+  title_str.SetParams("GCODE SENDER", 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
+  title_str.Move((scr_w - title_str.GetWidth()) / 2,
+                 nav_y + ((int32_t)window_height - Font_12x16::GetInstance().GetCharH()) / 2);
+
+  // *** Bottom section — same as home/override ***
+  int32_t run_stop_y = nav_y + total_h - (int32_t)window_height;      // 416
+  int32_t aux_y      = run_stop_y - BORDER_W - (int32_t)window_height; // 352
+  int32_t status_y   = aux_y - BORDER_W - (int32_t)window_height;      // 288
+
+  // Status strings
+  hdr_state.SetParams("-----", BORDER_W,
+                      status_y + ((int32_t)window_height - Font_12x16::GetInstance().GetCharH()) / 2,
+                      COLOR_WHITE, Font_12x16::GetInstance());
+  hdr_status_sub.SetParams("", BORDER_W,
+                            status_y + (int32_t)window_height - Font_8x12::GetInstance().GetCharH() - BORDER_W / 2,
+                            COLOR_WHITE, Font_8x12::GetInstance());
+
+  // Aux row: AIR | EXHAUST | FIRE | MPG
+  uint32_t aux_btn_w = ((uint32_t)scr_w - BORDER_W * 5u) / 4u; // 75px
+
+  flood_btn.SetParams("AIR",
+                      BORDER_W, aux_y, aux_btn_w, window_height, true);
+  flood_btn.SetCallback(AppTask::GetCurrent());
+
+  mist_btn.SetParams("EXHAUST",
+                     BORDER_W + (int32_t)aux_btn_w + BORDER_W, aux_y, aux_btn_w, window_height, true);
+  mist_btn.SetCallback(AppTask::GetCurrent());
+
+  fire_pgm_btn.SetParams("FIRE",
+                         BORDER_W + 2*((int32_t)aux_btn_w + BORDER_W), aux_y, aux_btn_w, window_height, true);
+  fire_pgm_btn.SetCallback(AppTask::GetCurrent());
+
+  mpg_pgm_btn.SetParams("MPG",
+                        BORDER_W + 3*((int32_t)aux_btn_w + BORDER_W), aux_y, aux_btn_w, window_height, true);
+  mpg_pgm_btn.SetCallback(AppTask::GetCurrent());
+
+  // Run / Stop
+  int32_t run_stop_w = 2 * (int32_t)aux_btn_w + BORDER_W; // 154px
+
+  run_btn.SetParams("RUN", BORDER_W, run_stop_y, run_stop_w, window_height, true);
+  run_btn.SetFont(Font_12x16::GetInstance());
+  run_btn.SetCallback(AppTask::GetCurrent());
+
+  stop_btn.SetParams("STOP", BORDER_W + run_stop_w + BORDER_W, run_stop_y,
+                     run_stop_w, window_height, true);
+  stop_btn.SetFont(Font_12x16::GetInstance());
+  stop_btn.SetCallback(AppTask::GetCurrent());
+
+  // *** Text box and file browser fill space between nav and status ***
+  int32_t content_y = nav_end + BORDER_W;
+  int32_t content_h = status_y - BORDER_W - content_y;
+
+  menu.SetCallback(AppTask::GetCurrent(), this,
+                   reinterpret_cast<CallbackPtr>(ProcessMenuOkCallback),
+                   reinterpret_cast<CallbackPtr>(ProcessMenuCancelCallback));
+  menu.Setup(menu_items, NumberOf(menu_items), 0, content_y, scr_w, content_h);
 
   // Fill menu_items
   for(uint32_t i = 0u; i < NumberOf(menu_items); i++)
   {
     menu_items[i].text = str[i];
-    menu_items[i].n = sizeof(str[i]);
+    menu_items[i].n    = sizeof(str[i]);
   }
-  // Set callback
-  menu.SetCallback(AppTask::GetCurrent(), this, reinterpret_cast<CallbackPtr>(ProcessMenuOkCallback), reinterpret_cast<CallbackPtr>(ProcessMenuCancelCallback));
-  // Setup menu
-  menu.Setup(menu_items, NumberOf(menu_items), 0, y, display_drv.GetScreenW(), height - Font_8x12::GetInstance().GetCharH() * 2u - BORDER_W*2);
-  // Setup text box
-  text_box.Setup(0, y, display_drv.GetScreenW(), height - Font_8x12::GetInstance().GetCharH() * 2u - BORDER_W*2 - CTRL_HEIGHT);
 
-  // Feed override
-  feed_dw.SetParams(BORDER_W, y + height - Font_8x12::GetInstance().GetCharH() * 2u - BORDER_W - BORDER_W - CTRL_HEIGHT, (display_drv.GetScreenW() - 2*CTRL_HEIGHT - 3*BORDER_W) / 2, CTRL_HEIGHT, 5u, 0u);
-  feed_dw.SetBorder(BORDER_W, COLOR_DARKBLUE);
-  feed_dw.SetDataFont(Font_12x16::GetInstance());
-  feed_dw.SetNumber(0);
-  feed_dw.SetUnits("%", DataWindow::RIGHT);
-  feed_dw.SetCallback(AppTask::GetCurrent());
-  feed_name.SetParams("FEED", feed_dw.GetStartX() + BORDER_W*3/2, feed_dw.GetStartY() + BORDER_W*3/2, COLOR_WHITE, Font_6x8::GetInstance());
-  // Speed override
-  speed_dw.SetParams(feed_dw.GetEndX() + BORDER_W, feed_dw.GetStartY(), feed_dw.GetWidth(), feed_dw.GetHeight(), 5u, 0u);
-  speed_dw.SetBorder(BORDER_W, COLOR_DARKBLUE);
-  speed_dw.SetDataFont(Font_12x16::GetInstance());
-  speed_dw.SetNumber(0);
-  speed_dw.SetUnits("%", DataWindow::RIGHT);
-  speed_dw.SetCallback(AppTask::GetCurrent());
-  speed_name.SetParams("SPEED", speed_dw.GetStartX() + BORDER_W*3/2, speed_dw.GetStartY() + BORDER_W*3/2, COLOR_WHITE, Font_6x8::GetInstance());
-  // Buttons for control flood coolant
-  flood_btn.SetParams("F", speed_dw.GetEndX() + BORDER_W, speed_dw.GetStartY(), speed_dw.GetHeight(), speed_dw.GetHeight(), true);
-  flood_btn.SetFont(Font_12x16::GetInstance());
-  flood_btn.SetCallback(AppTask::GetCurrent());
-  flood_btn.Disable();
-  // Buttons for control mist coolant
-  mist_btn.SetParams("M", flood_btn.GetEndX() + BORDER_W, speed_dw.GetStartY(), speed_dw.GetHeight(), speed_dw.GetHeight(), true);
-  mist_btn.SetFont(Font_12x16::GetInstance());
-  mist_btn.SetCallback(AppTask::GetCurrent());
-  mist_btn.Disable();
+  text_box.Setup(0, content_y, scr_w, content_h);
 
-  // All good
   return Result::RESULT_OK;
 }
 
@@ -89,60 +119,34 @@ Result ProgramSender::Setup(int32_t y, int32_t height)
 // *****************************************************************************
 Result ProgramSender::Show()
 {
-  // Set encoder callback handler(before menu show since menu will handle it also)
-  InputDrv::GetInstance().AddEncoderCallbackHandler(AppTask::GetCurrent(), reinterpret_cast<CallbackPtr>(ProcessEncoderCallback), this, enc_cble);
+  Application::GetInstance().HideGlobalUI();
 
-  // Show free memory info
+  InputDrv::GetInstance().AddEncoderCallbackHandler(AppTask::GetCurrent(),
+    reinterpret_cast<CallbackPtr>(ProcessEncoderCallback), this, enc_cble);
+
   Application::GetInstance().ShowMemoryInfo();
 
-  // Update text - in case it is generated, we have to count lines
+  prev_btn.Show(100);
+  next_btn.Show(100);
+  title_str.Show(101);
+
   text_box.SetText(p_text);
-  // Show text box
   text_box.Show(100);
 
-  // Axis data
-  for(uint32_t i = 0u; i < grbl_comm.GetLimitedNumberOfAxis(3u); i++)
-  {
-    DataWindow& dw_real = Application::GetInstance().GetRealDataWindow(i);
-    String& dw_real_name = Application::GetInstance().GetRealDataWindowNameString(i);
+  hdr_state.Show(101);
+  hdr_status_sub.Show(101);
 
-    // Real position
-    dw_real.SetParams(BORDER_W + ((display_drv.GetScreenW() - BORDER_W * 4) / 3 + BORDER_W) * i, feed_dw.GetEndY() + BORDER_W, (display_drv.GetScreenW() - BORDER_W * 4) / 3, Font_8x12::GetInstance().GetCharH() * 2u, 8u, grbl_comm.GetReportUnitsPrecision(i));
-    dw_real.SetBorder(BORDER_W / 2, COLOR_GREY);
-    dw_real.SetDataFont(Font_8x12::GetInstance());
-    dw_real.SetUnits(grbl_comm.GetReportUnits(), DataWindow::RIGHT, Font_6x8::GetInstance());
-    // Axis Name
-    dw_real_name.SetParams(grbl_comm.GetAxisName(i), 0, 0, COLOR_WHITE, Font_6x8::GetInstance());
-    dw_real_name.Move(dw_real.GetStartX() + BORDER_W, dw_real.GetStartY() + BORDER_W);
-
-    dw_real.Show(100);
-    dw_real_name.Show(100);
-  }
-
-  // Reinit all three Soft Buttons
-  Application::GetInstance().InitSoftButtons(true);
-
-  // Run button
-  left_btn.SetString("Run");
-  left_btn.Show(102);
-  // Open button
-  middle_btn.SetString("Open");
-  middle_btn.Show(102);
-  // Stop button
-  right_btn.SetString("Stop");
-  right_btn.Show(102);
-
-  // Feed objects
-  feed_dw.Show(100);
-  feed_name.Show(100);
-  // Speed objects
-  speed_dw.Show(100);
-  speed_name.Show(100);
-  // Coolant buttons
   flood_btn.Show(100);
   mist_btn.Show(100);
+  fire_pgm_btn.SetString("FIRE");
+  fire_pgm_btn.SetColor(COLOR_WHITE);
+  fire_active = false;
+  fire_pgm_btn.Show(100);
+  mpg_pgm_btn.Show(100);
 
-  // All good
+  run_btn.Show(100);
+  stop_btn.Show(100);
+
   return Result::RESULT_OK;
 }
 
@@ -151,722 +155,442 @@ Result ProgramSender::Show()
 // *****************************************************************************
 Result ProgramSender::Hide()
 {
-  // Delete encoder callback handler
   InputDrv::GetInstance().DeleteEncoderCallbackHandler(enc_cble);
 
-  // Hide free memory info
-  Application::GetInstance().HideMemoryInfo();
-
-  // Hide menu
   menu.Hide();
-  // Hide text box
   text_box.Hide();
 
-  // We may have file open, close it and clear text box
-  if(p_text == nullptr)
-  {
-    f_close(&SDFile);
-  }
+  if(p_text == nullptr) f_close(&SDFile);
 
-  // Axis data
-  for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
-  {
-    Application::GetInstance().GetRealDataWindow(i).Hide();
-    Application::GetInstance().GetRealDataWindowNameString(i).Hide();
-  }
+  prev_btn.Hide();
+  next_btn.Hide();
+  title_str.Hide();
 
-  // Go button
-  left_btn.Hide();
-  // Open button
-  middle_btn.Hide();
-  // Reset button
-  right_btn.Hide();
+  hdr_state.Hide();
+  hdr_status_sub.Hide();
 
-  // Feed objects
-  feed_dw.Hide();
-  feed_name.Hide();
-  // Speed objects
-  speed_dw.Hide();
-  speed_name.Hide();
-  // Coolant buttons
   flood_btn.Hide();
   mist_btn.Hide();
+  fire_pgm_btn.Hide();
+  mpg_pgm_btn.Hide();
 
-  // Reinit Soft Buttons to change their size back
-  Application::GetInstance().InitSoftButtons(false);
+  run_btn.Hide();
+  stop_btn.Hide();
 
-  // All good
+  Application::GetInstance().ShowGlobalUI();
+
   return Result::RESULT_OK;
 }
 
 // *****************************************************************************
-// ***   TimerExpired function   ***********************************************
+// ***   TimerExpired   ********************************************************
 // *****************************************************************************
 Result ProgramSender::TimerExpired(uint32_t interval)
 {
-  // Update left & right button text
-  Application::GetInstance().UpdateLeftButtonText();
-  Application::GetInstance().UpdateRightButtonText();
+  // Status strings centered
+  int32_t scr_w = display_drv.GetScreenW();
+  hdr_state.SetString(grbl_comm.GetCurrentStateName());
+  hdr_status_sub.SetString(grbl_comm.GetCurrentStatusName());
+  hdr_state.Move((scr_w - hdr_state.GetWidth()) / 2, hdr_state.GetStartY());
+  hdr_status_sub.Move((scr_w - hdr_status_sub.GetWidth()) / 2, hdr_status_sub.GetStartY());
 
-  // Update numbers with current overrides
-  feed_dw.SetNumber(grbl_comm.GetFeedOverride());
-  speed_dw.SetNumber(grbl_comm.GetSpeedOverride());
-  // Set coolant state
+  // Aux button colors
   flood_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
   mist_btn.SetColor(grbl_comm.GetCoolantMist() ? COLOR_GREEN : COLOR_WHITE);
+  fire_pgm_btn.SetColor(fire_active ? COLOR_RED : COLOR_WHITE);
+
+  if(grbl_comm.GetMpgModeRequest())
+    mpg_pgm_btn.SetColor(grbl_comm.GetMpgMode() ? COLOR_GREEN : COLOR_RED);
+  else
+    mpg_pgm_btn.SetColor(grbl_comm.GetMpgMode() ? COLOR_RED : COLOR_WHITE);
+
+  // RUN/STOP text
+  if(grbl_comm.GetState() == GrblComm::RUN)
+    run_btn.SetString("HOLD");
+  else
+    run_btn.SetString("RUN");
+
+  if(grbl_comm.GetState() == GrblComm::ALARM)
+    stop_btn.SetString(grbl_comm.GetStatusCode() == GrblComm::Status_NotAllowedCriticalEvent
+                       ? "RESET" : "UNLOCK");
+  else if((grbl_comm.GetState() == GrblComm::UNKNOWN) || (grbl_comm.GetState() == GrblComm::HOME))
+    stop_btn.SetString("RESET");
+  else
+    stop_btn.SetString("STOP");
 
   if(run)
   {
-    // Process speed & feed change
-    ProcessSpeedFeed();
-
-    // We should stream program if state is Idle, Run or Hold and we in control
-    if(((grbl_comm.GetState() == GrblComm::IDLE) || (grbl_comm.GetState() == GrblComm::RUN) || (grbl_comm.GetState() == GrblComm::HOLD)) && (grbl_comm.IsInControl()))
+    if(((grbl_comm.GetState() == GrblComm::IDLE) || (grbl_comm.GetState() == GrblComm::RUN) ||
+        (grbl_comm.GetState() == GrblComm::HOLD)) && grbl_comm.IsInControl())
     {
-      // If we finished streaming
       if(finished)
       {
-        // Wait until IDLE state
         if(grbl_comm.GetState() == GrblComm::IDLE)
         {
-          // Then clear run flag
           run = false;
+          Application::GetInstance().EnableScreenChange();
         }
       }
       else
       {
-        // If ID is zero - we didn't send any commands yet
         GrblComm::status_t result = (id != 0u) ? grbl_comm.GetCmdResult(id) : GrblComm::Status_OK;
-        // If result of previous command is ok
         if((result == GrblComm::Status_OK) || (result == GrblComm::Status_Next_Cmd_Executed))
         {
-          // Buffer for command
           char cmd[128u];
-          // Since all program commands have striped out CR and LF, we have to add it
           snprintf(cmd, NumberOf(cmd), "%s\r", text_box.GetSelectedStringText());
-          // Send new command
           if(grbl_comm.SendCmd(cmd, id) == Result::RESULT_OK)
           {
             int32_t select = text_box.GetSelect();
             int32_t scroll = text_box.GetScroll();
-            // Load next string for SD streamed programs
             if(p_text == nullptr)
             {
-              // If we did not passed half the screen or if file closed
-              // and we need to finish remaining lines
               if((select < text_box.GetNumberOfVisibleLines() / 2) || f_eof(&SDFile))
               {
-                // Go to next line
                 text_box.Select(select + 1);
-                // Can't go further - end of program
-                if(select == text_box.GetSelect())
-                {
-                  // Set finished flag
-                  finished = true;
-                }
+                if(select == text_box.GetSelect()) finished = true;
               }
               else
               {
-                // Buffer to read string 80 + 2 + 1
                 char str[128] = {0};
-                // Read line from file
                 if(f_gets(str, NumberOf(str), &SDFile) != nullptr)
                 {
-                  // Null-terminate just in case
                   str[NumberOf(str) - 1] = '\0';
-                  // If we read line longer than 80 characters + possible CR & LF characters
                   if(strlen(str) > 80 + 2)
-                  {
-                    // Rewind to the end of file
                     f_lseek(&SDFile, SDFile.obj.objsize);
-                  }
                   else
-                  {
-                    // Set this line to text_box
                     text_box.AddLine(str);
-                  }
                 }
               }
             }
             else
             {
-              // If we half past screen
               if(select - scroll >= text_box.GetNumberOfVisibleLines() / 2)
-              {
-                // Scroll to to see next lines to see what will send next
                 text_box.Scroll(scroll + 1);
-              }
-              // Go to next line
               text_box.Select(select + 1);
-              // Can't go further - end of program
-              if(select == text_box.GetSelect())
-              {
-                // Set finished flag
-                finished = true;
-              }
+              if(select == text_box.GetSelect()) finished = true;
             }
           }
         }
         else if(result == GrblComm::Status_Cmd_Not_Executed_Yet)
         {
-          ; // Wait until command will be executed
+          ; // Wait
         }
-        else // In case of any error - stop executing program
+        else
         {
-          // Clear run flag
           run = false;
+          Application::GetInstance().EnableScreenChange();
         }
       }
     }
     else
     {
-      // In case of any unexpected error - stop the program
       run = false;
+      Application::GetInstance().EnableScreenChange();
     }
   }
-  else if(grbl_comm.GetState() == GrblComm::RUN) // If we finished program, but controller still running
+  else if(grbl_comm.GetState() != GrblComm::RUN)
   {
-    // Process speed & feed change
-    ProcessSpeedFeed();
-  }
-  else
-  {
-    // Safety measure: allow run program only from the beginning
-    // TODO: add dialog box "Are you sure you want to run program from current position?" instead
+    // Enable run only from beginning of file
     if(text_box.GetSelect() == 0)
-    {
-      left_btn.Enable();
-    }
+      run_btn.Enable();
     else
-    {
-      left_btn.Disable();
-    }
-    // If feed control enabled - disable it
-    if(feed_dw.IsActive())
-    {
-      feed_dw.SetActive(false);
-      feed_dw.SetBorder(BORDER_W, COLOR_DARKBLUE);
-      feed_dw.SetSelected(false);
-    }
-    // If speed control enabled - disable it
-    if(speed_dw.IsActive())
-    {
-      speed_dw.SetActive(false);
-      speed_dw.SetBorder(BORDER_W, COLOR_DARKBLUE);
-      speed_dw.SetSelected(false);
-    }
-    // Disable coolant control
-    flood_btn.Disable();
-    mist_btn.Disable();
-    // Enable buttons back
-    middle_btn.Enable();
-    // Enable screen change if program isn't running
-    Application::GetInstance().EnableScreenChange();
-    // If encoder turned and we have program in memory
+      run_btn.Disable();
+
+    // Allow scrolling with encoder
     if((enc_val != 0) && (p_text != nullptr))
     {
-      // Select line
       text_box.Select(text_box.GetSelect() + enc_val);
-      //text_box.Scroll(text_box.GetScroll() + enc_val);
-      // Clear encoder value
       enc_val = 0;
     }
   }
 
-  // Return ok - we don't check semaphore give error, because we don't need to.
   return Result::RESULT_OK;
 }
 
-// *************************************************************************
-// ***   Private: ProcessSpeedFeed function   ******************************
-// *************************************************************************
-Result ProgramSender::ProcessSpeedFeed()
+// *****************************************************************************
+// ***   ProcessCallback   *****************************************************
+// *****************************************************************************
+Result ProgramSender::ProcessCallback(const void* ptr)
 {
   Result result = Result::RESULT_OK;
 
-  // Update feed if necessary. One step at a timer tick.
-  if(feed_val > 0)
+  if(ptr == &prev_btn)
   {
-    if(feed_val > 10)
+    Application::GetInstance().PrevScreen();
+  }
+  else if(ptr == &next_btn)
+  {
+    Application::GetInstance().NextScreen();
+  }
+  else if(ptr == &run_btn)
+  {
+    if(!run && grbl_comm.IsInControl() && (grbl_comm.GetState() == GrblComm::IDLE))
     {
-      result = grbl_comm.FeedCoarsePlus();
-      feed_val -= 10;
+      id       = 0u;
+      run      = true;
+      finished = false;
+      Application::GetInstance().DisableScreenChange();
+    }
+    else if(grbl_comm.GetState() == GrblComm::RUN)
+    {
+      grbl_comm.Hold();
     }
     else
     {
-      result = grbl_comm.FeedFinePlus();
-      feed_val--;
+      grbl_comm.Run();
     }
   }
-  else if (feed_val < 0)
+  else if(ptr == &stop_btn)
   {
-    if(feed_val < -10)
+    run = false;
+    Application::GetInstance().EnableScreenChange();
+    if(grbl_comm.GetState() == GrblComm::ALARM)
     {
-      result = grbl_comm.FeedCoarseMinus();
-      feed_val += 10;
+      if(grbl_comm.GetStatusCode() == GrblComm::Status_NotAllowedCriticalEvent)
+        grbl_comm.Reset();
+      else
+        grbl_comm.Unlock();
+    }
+    else if((grbl_comm.GetState() == GrblComm::UNKNOWN) || (grbl_comm.GetState() == GrblComm::HOME))
+    {
+      grbl_comm.Reset();
     }
     else
     {
-      result = grbl_comm.FeedFineMinus();
-      feed_val++;
+      grbl_comm.Stop();
     }
+  }
+  else if(ptr == &flood_btn)
+  {
+    grbl_comm.CoolantFloodToggle(); // AIR = M8
+  }
+  else if(ptr == &mist_btn)
+  {
+    grbl_comm.CoolantMistToggle(); // EXHAUST = M7
+  }
+  else if(ptr == &fire_pgm_btn)
+  {
+    bool was_in_control = grbl_comm.GetMpgModeRequest();
+    if(!was_in_control) grbl_comm.GainControl();
+    uint32_t fire_id = 0u;
+    if(!fire_active)
+    {
+      grbl_comm.CoolantFloodToggle();
+      grbl_comm.CoolantMistToggle();
+      grbl_comm.SendCmd("$32=0\r", fire_id);
+      grbl_comm.SendCmd("M3 S30\r", fire_id);
+      fire_active = true;
+    }
+    else
+    {
+      grbl_comm.SendCmd("M5\r", fire_id);
+      grbl_comm.SendCmd("$32=1\r", fire_id);
+      grbl_comm.CoolantFloodToggle();
+      grbl_comm.CoolantMistToggle();
+      fire_active = false;
+    }
+    if(!was_in_control) grbl_comm.ReleaseControl();
+  }
+  else if(ptr == &mpg_pgm_btn)
+  {
+    if(grbl_comm.GetMpgModeRequest())
+      grbl_comm.ReleaseControl();
+    else
+      grbl_comm.GainControl();
+  }
+  else if(ptr == &text_box)
+  {
+    // Tap on text area opens file browser when not running
+    if(!run) OpenFileMenu();
   }
   else
   {
     ; // Do nothing
   }
 
-  // Update speed if necessary. One step at a timer tick.
-  if(speed_val > 0)
-  {
-    if(speed_val > 10)
-    {
-      result = grbl_comm.SpeedCoarsePlus();
-      speed_val -= 10;
-    }
-    else
-    {
-      result = grbl_comm.SpeedFinePlus();
-      speed_val--;
-    }
-  }
-  else if (speed_val < 0)
-  {
-    if(speed_val < -10)
-    {
-      result = grbl_comm.SpeedCoarseMinus();
-      speed_val += 10;
-    }
-    else
-    {
-      result = grbl_comm.SpeedFineMinus();
-      speed_val++;
-    }
-  }
-  else
-  {
-    ; // Do nothing
-  }
-
-  // Return result
   return result;
 }
 
 // *****************************************************************************
-// ***   Private: ProcessMenuOkCallback function   *****************************
+// ***   OpenFileMenu   ********************************************************
+// *****************************************************************************
+void ProgramSender::OpenFileMenu()
+{
+  AppTask::GetCurrent()->StopTimer();
+
+  text_box.SetText(nullptr);
+  f_close(&SDFile);
+  ReleaseDataPointer();
+
+  BSP_SD_Init();
+  FRESULT res = f_mount(&SDFatFS, (TCHAR const*)SDPath, 0);
+  DIR dir;
+  if(res == FR_OK) res = f_opendir(&dir, "/");
+
+  uint32_t cnt = 0u;
+  if(res == FR_OK)
+  {
+    FILINFO fno;
+    for(;;)
+    {
+      res = f_readdir(&dir, &fno);
+      if((res != FR_OK) || (fno.fname[0] == 0)) break;
+      bool add_file = false;
+      uint32_t i = 0u;
+      for(; i < NumberOf(fno.fname); i++) if(fno.fname[i] == '\0') break;
+      for(i -= 3u; i > 0; i--)
+      {
+        if((fno.fname[i] == '.') && (tolower(fno.fname[i+2]) == 'c'))
+        {
+          if((tolower(fno.fname[i+1]) == 'g') || (tolower(fno.fname[i+1]) == 'n'))
+          { add_file = true; break; }
+        }
+      }
+      if(!(fno.fattrib & AM_DIR) && add_file)
+      {
+        menu_items[cnt].str.SetString(menu_items[cnt].text, menu_items[cnt].n,
+                                      "%-19s%12lub", fno.fname, fno.fsize);
+        cnt++;
+        if(cnt == NumberOf(menu_items)) break;
+      }
+    }
+    f_closedir(&dir);
+  }
+  for(uint32_t i = cnt; i < NumberOf(menu_items); i++) str[i][0] = '\0';
+
+  AppTask::GetCurrent()->StartTimer();
+
+  text_box.Hide();
+  menu.SetCount(cnt);
+  menu.Show(100);
+
+  idx = 0u;
+}
+
+// *****************************************************************************
+// ***   ProcessMenuOkCallback   ***********************************************
 // *****************************************************************************
 Result ProgramSender::ProcessMenuOkCallback(ProgramSender* obj_ptr, void* ptr)
 {
   Result result = Result::ERR_NULL_PTR;
-
-  // Check pointer
   if(obj_ptr != nullptr)
   {
-    // Cast pointer to "this". Since we can't use non-static members as callback,
-    // we have to provide pinter to object.
     ProgramSender& ths = *obj_ptr;
-
-    // Hide the menu
     ths.menu.Hide();
 
-    // Buffer for the file name, filled with 0
     char fn[20u] = {0};
-    // Copy filename(max 19 characters
     for(uint32_t i = 0u; i < NumberOf(fn); i++)
     {
       fn[i] = ths.menu_items[(uint32_t)ptr].text[i];
       if(fn[i] == '\0') break;
     }
-    // Go from the end of array and replace all spaces to null-terminator until
-    // we found first non-space character
     for(uint32_t i = NumberOf(fn) - 1u; i > 0u; i--)
     {
       if(fn[i] <= ' ') fn[i] = '\0';
       else break;
     }
 
-    // Open file
     FRESULT fres = f_open(&SDFile, fn, FA_OPEN_EXISTING | FA_READ);
-    // Write data to file
     if(fres == FR_OK)
     {
-      // Get file size
       uint32_t fsize = f_size(&SDFile) + 1u;
-      // Allocate memory for data
       ths.AllocateDataBuffer(fsize);
-      // Check if allocation was successful
       if(ths.p_text != nullptr)
       {
-        // Read bytes
         UINT wbytes = 0u;
-        // Read text
         fres = f_read(&SDFile, ths.p_text, fsize, &wbytes);
-        // And null-terminator to it
         ths.p_text[wbytes] = 0x00;
-        // Set text to text box
         if(!ths.text_box.SetText(ths.p_text))
-        {
-          // If program contains lines longer than 80 characters - show message
-          ths.text_box.SetText("; Program contain lines longer\n\r; than 80 characters");
-        }
-        // Close file
+          ths.text_box.SetText("; Lines longer than 80 chars");
         fres = f_close(&SDFile);
       }
       else
       {
-        // Clear text buffer to switch into line mode
         ths.text_box.SetText(nullptr);
-
-        // Buffer to read string
         char str[128] = {0};
-        // Fill all visible lines
         for(int32_t i = 0; i < ths.text_box.GetNumberOfVisibleLines(); i++)
         {
-          // Read line from file
           f_gets(str, NumberOf(str), &SDFile);
-          // Null-terminate just in case
           str[NumberOf(str) - 1] = '\0';
-          // If we read line longer than 80 characters + possible CR & LF characters
           if(strlen(str) > 80 + 2)
-          {
-            // Close file - we can't continue
-            f_close(&SDFile);
-            // If beginning of program contains lines longer than 80 characters - show message
-            ths.text_box.SetText("; Program contain lines longer\n\r; than 80 characters");
-            // Break the cycle
-            break;
-          }
-          else
-          {
-            // Set this line to text_box
-            ths.text_box.AddLine(str);
-          }
+          { f_close(&SDFile); ths.text_box.SetText("; Lines longer than 80 chars"); break; }
+          else ths.text_box.AddLine(str);
         }
       }
     }
     else
     {
-      // If memory allocation operation isn't successful set text
-      ths.text_box.SetText("; Error open file!");
+      ths.text_box.SetText("; Error opening file!");
     }
 
-    // And show it
     ths.text_box.Show(100);
-    // Left button
-    ths.left_btn.Show(102);
-    // Open button
-    ths.middle_btn.Show(102);
-    // Right button
-    ths.right_btn.Show(102);
-
-    // Set ok result
     result = Result::RESULT_OK;
   }
-
-  // Return result
   return result;
 }
 
 // *****************************************************************************
-// ***   Private: ProcessMenuCancelCallback function   *************************
+// ***   ProcessMenuCancelCallback   *******************************************
 // *****************************************************************************
 Result ProgramSender::ProcessMenuCancelCallback(ProgramSender* obj_ptr, void* ptr)
 {
   Result result = Result::ERR_NULL_PTR;
-
-  // Check pointer
   if(obj_ptr != nullptr)
   {
-    // Cast pointer to "this". Since we can't use non-static members as callback,
-    // we have to provide pinter to object.
     ProgramSender& ths = *obj_ptr;
-
-    // Hide the menu
     ths.menu.Hide();
-    // Set cancel text
-    ths.text_box.SetText("; Cancel pressed in open dialog");
-    // And show textbox
+    ths.text_box.SetText("; Cancelled");
     ths.text_box.Show(100);
-    // Run button
-    ths.left_btn.Show(102);
-    // Open button
-    ths.middle_btn.Show(102);
-    // Stop button
-    ths.right_btn.Show(102);
-
-    // Set ok result
     result = Result::RESULT_OK;
   }
-
-  // Return result
   return result;
 }
 
 // *****************************************************************************
-// ***   ProcessCallback function   ********************************************
-// *****************************************************************************
-Result ProgramSender::ProcessCallback(const void* ptr)
-{
-  Result result = Result::RESULT_OK;
-
-  // Process Run button. Since we can call this handler after press of physical
-  // button, we have to check if Run button is active.
-  if(ptr == &left_btn)
-  {
-    // We should run program only if it doesn't already run, we in control and state is Idle
-    if(!run && grbl_comm.IsInControl() && (grbl_comm.GetState() == GrblComm::IDLE))
-    {
-      // Clear id to run program
-      id = 0u;
-      // Set run flag to start program streaming
-      run = true;
-      finished = false;
-      // Enable Feed & Speed control
-      feed_dw.SetActive(true);
-      speed_dw.SetActive(true);
-      feed_dw.SetBorder(BORDER_W, COLOR_RED);
-      speed_dw.SetBorder(BORDER_W, COLOR_RED);
-      feed_dw.SetSelected(true);
-      speed_dw.SetSelected(false);
-      flood_btn.Enable();
-      mist_btn.Enable();
-      // Disable buttons while program is running
-      middle_btn.Disable();
-      // Disable screen change if program is running
-      Application::GetInstance().DisableScreenChange();
-    }
-    else
-    {
-      result = Result::ERR_UNHANDLED_REQUEST; // For Application to handle it
-    }
-  }
-  // Process Reset button
-  else if(ptr == &right_btn)
-  {
-    // Clear run flag
-    run = false;
-    // For Application to handle it(Stop/Reset)
-    result = Result::ERR_UNHANDLED_REQUEST;
-  }
-  // Process Reset button
-  else if((ptr == &middle_btn) && (middle_btn.IsActive()))
-  {
-    // Stop timer to prevent queue overflow since SD card operations can take some
-    // time.
-    AppTask::GetCurrent()->StopTimer();
-
-    // Clear text box
-    text_box.SetText(nullptr);
-    // We may have file open - close it
-    f_close(&SDFile);
-    // Clear current data to show available memory
-    ReleaseDataPointer();
-
-    // Reinit SD card
-    BSP_SD_Init();
-
-    // Mount SD
-    FRESULT res = f_mount(&SDFatFS, (TCHAR const*)SDPath, 0);
-    DIR dir;
-
-    // Open the directory
-    if(res == FR_OK)
-    {
-      res = f_opendir(&dir, "/");
-    }
-
-    uint32_t idx = 0u;
-
-    if(res == FR_OK)
-    {
-      FILINFO fno;
-      for(;;)
-      {
-        // Read a directory item
-        res = f_readdir(&dir, &fno);
-        // Break on error or end of dir
-        if((res != FR_OK) || (fno.fname[0] == 0)) break;
-        // Check extension - we want .gc* or .nc*
-        bool add_file = false;
-        // Index variable
-        uint32_t i = 0u;
-        // Find end of the filename
-        for(; i < NumberOf(fno.fname); i++) if(fno.fname[i] == '\0') break;
-        // Check extension
-        for(i -= 3u; i > 0; i--)
-        {
-          // Check if extension is .nc* or .gc*
-          if((fno.fname[i] == '.') && (tolower(fno.fname[i+2]) == 'c'))
-          {
-            if((tolower(fno.fname[i+1]) == 'g') || (tolower(fno.fname[i+1]) == 'n'))
-            {
-              add_file = true;
-              break;
-            }
-          }
-        }
-        // It isn't a directory
-        if(!(fno.fattrib & AM_DIR) && add_file)
-        {
-          menu_items[idx].str.SetString(menu_items[idx].text, menu_items[idx].n, "%-19s%12lub", fno.fname, fno.fsize);
-          idx++;
-          if(idx == NumberOf(menu_items)) break;
-        }
-      }
-      f_closedir(&dir);
-    }
-    // Fill menu_items
-    for(uint32_t i = idx; i < NumberOf(menu_items); i++)
-    {
-      str[i][0] = '\0';
-    }
-
-    // Restart timer
-    AppTask::GetCurrent()->StartTimer();
-
-    // Hide text box before open menu
-    text_box.Hide();
-    // Go button
-    left_btn.Hide();
-    // Open button
-    middle_btn.Hide();
-    // Reset button
-    right_btn.Hide();
-
-    // Set menu items count
-    menu.SetCount(idx);
-    // Show menu
-    menu.Show(100);
-
-    // Clear current position
-    idx = 0u;
-  }
-  else if(ptr == &feed_dw)
-  {
-    speed_dw.SetSelected(false);
-    feed_dw.SetSelected(true);
-  }
-  else if(ptr == &speed_dw)
-  {
-    feed_dw.SetSelected(false);
-    speed_dw.SetSelected(true);
-  }
-  else if(ptr == &flood_btn)
-  {
-    grbl_comm.CoolantFloodToggle();
-  }
-  else if(ptr == &mist_btn)
-  {
-    grbl_comm.CoolantMistToggle();
-  }
-  else
-  {
-    ; // Do nothing - MISRA rule
-  }
-
-  // Return result
-  return result;
-}
-
-// *****************************************************************************
-// ***   Public: AllocateDataBuffer   ******************************************
+// ***   AllocateDataBuffer   **************************************************
 // *****************************************************************************
 char* ProgramSender::AllocateDataBuffer(uint32_t& size)
 {
-  // Always release data buffer before allocate it again
   ReleaseDataPointer();
-
-  // If size is zero
   if(size == 0u)
   {
-    // Get maximum available block size from FreeRTOS and use it
     HeapStats_t HeapStats;
     vPortGetHeapStats(&HeapStats);
     size = HeapStats.xSizeOfLargestFreeBlockInBytes - 32u;
   }
-
-  // Allocate memory for data
   p_text = new char[size];
-  // If allocation is successful
-  if(p_text != nullptr)
-  {
-    // Add null-terminator to the first element
-    p_text[0] = '\0';
-  }
-  // Set buffer(or nullptr) to textbox
+  if(p_text != nullptr) p_text[0] = '\0';
   text_box.SetText(p_text);
-  // Update free memory info
   Application::GetInstance().UpdateMemoryInfo();
-  // Return result
   return p_text;
 }
 
 // *****************************************************************************
-// ***   Public: ReleaseDataPointer   ******************************************
+// ***   ReleaseDataPointer   **************************************************
 // *****************************************************************************
 void ProgramSender::ReleaseDataPointer()
 {
-  // If buffer was previously allocated
   if(p_text != nullptr)
   {
-    // Hide text box before delete buffer
     text_box.Hide();
-    // Delete previously allocated buffer
     delete [] p_text;
-    // Set text to nullptr
     p_text = nullptr;
   }
-  // Set null data pointer
   text_box.SetText(nullptr);
-  // Update free memory info
   Application::GetInstance().UpdateMemoryInfo();
 }
 
 // *****************************************************************************
-// ***   Private: ProcessEncoderCallback function   ****************************
+// ***   ProcessEncoderCallback   **********************************************
 // *****************************************************************************
 Result ProgramSender::ProcessEncoderCallback(ProgramSender* obj_ptr, void* ptr)
 {
   Result result = Result::ERR_NULL_PTR;
-
-  // Check pointer
   if(obj_ptr != nullptr)
   {
-    // Cast pointer to "this". Since we can't use non-static members as callback,
-    // we have to provide pinter to object.
     ProgramSender& ths = *obj_ptr;
-    // Cast pointer itself to integer value
-    int32_t enc_val = (int32_t)ptr;
-
-    // If program isn't running - scroll text
-    if(!ths.run)
-    {
-      ths.enc_val += enc_val;
-    }
-    else if(ths.feed_dw.IsSelected())
-    {
-      ths.feed_val += enc_val;
-    }
-    else if(ths.speed_dw.IsSelected())
-    {
-      ths.speed_val += enc_val;
-    }
-    else
-    {
-      ; // Do nothing - MISRA rule
-    }
-
-    // Set ok result
+    ths.enc_val += (int32_t)ptr;
     result = Result::RESULT_OK;
   }
-
-  // Return result
   return result;
 }
-
-// *****************************************************************************
-// ***   Private constructor   *************************************************
-// *****************************************************************************
-ProgramSender::ProgramSender() : left_btn(Application::GetInstance().GetLeftButton()),
-                                 middle_btn(Application::GetInstance().GetMiddleButton()),
-                                 right_btn(Application::GetInstance().GetRightButton()) {};

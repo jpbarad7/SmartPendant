@@ -164,7 +164,7 @@ class Application : public AppTask
     // *************************************************************************
     // ***   Public: ShowMemoryInfo function   *********************************
     // *************************************************************************
-    void ShowMemoryInfo() {UpdateMemoryInfo(); mem_info.Show(10000);}
+    void ShowMemoryInfo() {}
 
     // *************************************************************************
     // ***   Public: HideMemoryInfo function   *********************************

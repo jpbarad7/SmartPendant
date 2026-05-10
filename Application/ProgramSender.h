@@ -1,30 +1,20 @@
 //******************************************************************************
 //  @file ProgramSender.h
-//  @author Nicolai Shlapunov
+//  @author Nicolai Shlapunov / JPB Laser modifications
 //
-//  @details ProgramSender: User ProgramSender Class, header
-//
-//  @copyright Copyright (c) 2023, Devtronic & Nicolai Shlapunov
-//             All rights reserved.
-//
-//  @section SUPPORT
-//
-//   Devtronic invests time and resources providing this open source code,
-//   please support Devtronic and open-source hardware/software by
-//   donations and/or purchasing products from Devtronic.
+//  @details ProgramSender: G-code file sender screen.
+//           Full-screen self-contained layout matching other screens.
+//           Bottom: status | AIR/EXHAUST/FIRE/MPG | RUN/STOP
+//           File open triggered by tapping text area.
 //
 //******************************************************************************
 
 #ifndef ProgramSender_h
 #define ProgramSender_h
 
-// *****************************************************************************
-// ***   Includes   ************************************************************
-// *****************************************************************************
 #include "DevCfg.h"
 #include "DisplayDrv.h"
 #include "UiEngine.h"
-
 #include "IScreen.h"
 #include "DataWindow.h"
 #include "GrblComm.h"
@@ -32,162 +22,77 @@
 #include "Menu.h"
 #include "TextBox.h"
 
-// *****************************************************************************
-// ***   Local const variables   ***********************************************
-// *****************************************************************************
-
-// *****************************************************************************
-// ***   Defines   *************************************************************
-// *****************************************************************************
 #define BG_Z (100)
 
-// *****************************************************************************
-// ***   ProgramSender Class   *************************************************
-// *****************************************************************************
 class ProgramSender : public IScreen
 {
   public:
-    // *************************************************************************
-    // ***   Get Instance   ****************************************************
-    // *************************************************************************
     static ProgramSender& GetInstance();
-
-    // *************************************************************************
-    // ***   Setup function   **************************************************
-    // *************************************************************************
     virtual Result Setup(int32_t y, int32_t height);
-
-    // *************************************************************************
-    // ***   Public: Show   ****************************************************
-    // *************************************************************************
     virtual Result Show();
-
-    // *************************************************************************
-    // ***   Public: Hide   ****************************************************
-    // *************************************************************************
     virtual Result Hide();
-
-    // *************************************************************************
-    // ***   Public: TimerExpired   ********************************************
-    // *************************************************************************
     virtual Result TimerExpired(uint32_t interval);
-
-    // *************************************************************************
-    // ***   Public: ProcessCallback   *****************************************
-    // *************************************************************************
     virtual Result ProcessCallback(const void* ptr);
 
-    // *************************************************************************
-    // ***   Public: AllocateDataBuffer   **************************************
-    // *************************************************************************
-    char* AllocateDataBuffer(uint32_t& size);
-
-    // *************************************************************************
-    // ***   Public: GetDataBufferPtr   ****************************************
-    // *************************************************************************
-    char* GetDataBufferPtr() {return p_text;}
-
-    // *************************************************************************
-    // ***   Public: GetDataBufferLength   *************************************
-    // *************************************************************************
+    char*    AllocateDataBuffer(uint32_t& size);
+    char*    GetDataBufferPtr()    {return p_text;}
     uint32_t GetDataBufferLength() {return strlen(p_text);}
-
-    // *************************************************************************
-    // ***   Public: ReleaseDataPointer   **************************************
-    // *************************************************************************
-    void ReleaseDataPointer();
+    void     ReleaseDataPointer();
 
   private:
     static const uint8_t BORDER_W = 4u;
 
-    // Run flag
-    bool run = false;
-    bool finished = false;
-    // Current position
-    uint32_t idx = 0u;
-    // Current cmd ID
-    uint32_t id = 0u;
+    // Run state
+    bool     run      = false;
+    bool     finished = false;
+    uint32_t idx      = 0u;
+    uint32_t id       = 0u;
 
-    // Pointer to text buffer used if program loaded completely
+    // G-code buffer
     char* p_text = nullptr;
 
-    // Strings
-    char str[32u][32u + 1u] = {0};
-    // menu items
+    // File browser menu
+    char           str[32u][32u + 1u] = {0};
     Menu::MenuItem menu_items[32u];
-    // Menu object
-    Menu menu;
+    Menu           menu;
 
-    // Text box for program
+    // G-code text display
     TextBox text_box;
 
-    // Soft Buttons
-    UiButton& left_btn;
-    UiButton& middle_btn;
-    UiButton& right_btn;
+    // Navigation bar
+    UiButton prev_btn;
+    UiButton next_btn;
+    String   title_str;
 
-    // *************************************************************************
-    // *** Feeds & Speeds override   *******************************************
-    // *************************************************************************
+    // Status display
+    String hdr_state;
+    String hdr_status_sub;
 
-    // String for caption
-    String feed_name;
-    // Data windows to show current value
-    DataWindow feed_dw;
-    // Feed value
-    int32_t feed_val = 0;
+    // Aux row: AIR | EXHAUST | FIRE | MPG
+    UiButton flood_btn;    // AIR     (M8)
+    UiButton mist_btn;     // EXHAUST (M7)
+    UiButton fire_pgm_btn; // FIRE test
+    UiButton mpg_pgm_btn;  // MPG toggle
+    bool     fire_active = false;
 
-    // String for caption
-    String speed_name;
-    // Data windows to show current value
-    DataWindow speed_dw;
-    // Feed value
-    int32_t speed_val = 0;
+    // Bottom row
+    UiButton run_btn;
+    UiButton stop_btn;
 
-    // Buttons for control flood coolant
-    UiButton flood_btn;
-    // Buttons for control mist coolant
-    UiButton mist_btn;
-
-    // *************************************************************************
-    // *************************************************************************
-    // *************************************************************************
-
-    // Display driver instance
+    // Driver instances
     DisplayDrv& display_drv = DisplayDrv::GetInstance();
-    // GRBL Communication Interface instance
-    GrblComm& grbl_comm = GrblComm::GetInstance();
+    GrblComm&   grbl_comm   = GrblComm::GetInstance();
 
-    // Encoder value
-    int32_t enc_val = 0u;
-
-    // Encoder callback entry
+    // Encoder (for scrolling text)
+    int32_t enc_val = 0;
     InputDrv::CallbackListEntry enc_cble;
 
-    // *************************************************************************
-    // ***   Private: ProcessSpeedFeed function   ******************************
-    // *************************************************************************
-    Result ProcessSpeedFeed();
-
-    // *************************************************************************
-    // ***   Private: ProcessMenuOkCallback function   *************************
-    // *************************************************************************
     static Result ProcessMenuOkCallback(ProgramSender* obj_ptr, void* ptr);
-
-    // *************************************************************************
-    // ***   Private: ProcessMenuCancelCallback function   *********************
-    // *************************************************************************
     static Result ProcessMenuCancelCallback(ProgramSender* obj_ptr, void* ptr);
-
-    // *************************************************************************
-    // ***   Private: ProcessEncoderCallback function   ************************
-    // *************************************************************************
     static Result ProcessEncoderCallback(ProgramSender* obj_ptr, void* ptr);
+    void          OpenFileMenu();
 
-    // *************************************************************************
-    // ***   Private constructor   *********************************************
-    // *************************************************************************
-    ProgramSender();
+    ProgramSender() {};
 };
 
 #endif
