@@ -515,8 +515,6 @@ void Application::InitHeader()
   scr[scr_cnt++] = &DirectControlScr::GetInstance();
   header.SetText(scr_cnt, "OVERRIDE", Font_12x16::GetInstance());
   scr[scr_cnt++] = &OverrideCtrlScr::GetInstance();
-  header.SetText(scr_cnt, "GCODE SENDER", Font_12x16::GetInstance());
-  scr[scr_cnt++] = &ProgramSender::GetInstance();
   header.SetText(scr_cnt, "SETTINGS", Font_12x16::GetInstance());
   scr[scr_cnt++] = &SettingsScr::GetInstance();
   // Pages for screens (second call to resize to actual number of pages)
