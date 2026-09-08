@@ -10,6 +10,7 @@
 
 #include "OverrideCtrlScr.h"
 #include "Application.h"
+#include "MillConfig.h"
 
 // *****************************************************************************
 OverrideCtrlScr& OverrideCtrlScr::GetInstance()
@@ -60,26 +61,25 @@ Result OverrideCtrlScr::Setup(int32_t y, int32_t height)
                             status_y + (int32_t)window_height - Font_8x12::GetInstance().GetCharH() - BORDER_W / 2,
                             COLOR_WHITE, Font_8x12::GetInstance());
 
-  // *** Aux row: 4 equal buttons matching home screen ***
-  uint32_t aux_btn_w = ((uint32_t)scr_w - BORDER_W * 5u) / 4u; // 75px
+  // *** Aux row: 3 equal buttons matching home screen ***
+  uint32_t aux_btn_w = ((uint32_t)scr_w - BORDER_W * 4u) / 3u; // 101px
 
-  flood_btn.SetParams("AIR", BORDER_W, aux_y, aux_btn_w, window_height, true);
-  flood_btn.SetCallback(AppTask::GetCurrent());
+  vac_btn.SetParams("VAC", BORDER_W, aux_y, aux_btn_w, window_height, true);
+  vac_btn.SetCallback(AppTask::GetCurrent());
 
-  mist_btn.SetParams("EXHAUST", BORDER_W + (int32_t)aux_btn_w + BORDER_W,
-                     aux_y, aux_btn_w, window_height, true);
-  mist_btn.SetCallback(AppTask::GetCurrent());
+  spindle_ovr_btn.SetParams("SPINDLE", BORDER_W + (int32_t)aux_btn_w + BORDER_W,
+                            aux_y, aux_btn_w, window_height, true);
+  spindle_ovr_btn.SetCallback(AppTask::GetCurrent());
 
-  fire_ovr_btn.SetParams("FIRE", BORDER_W + 2 * ((int32_t)aux_btn_w + BORDER_W),
-                          aux_y, aux_btn_w, window_height, true);
-  fire_ovr_btn.SetCallback(AppTask::GetCurrent());
-
-  mpg_ovr_btn.SetParams("MPG", BORDER_W + 3 * ((int32_t)aux_btn_w + BORDER_W),
+  mpg_ovr_btn.SetParams("MPG", BORDER_W + 2 * ((int32_t)aux_btn_w + BORDER_W),
                          aux_y, aux_btn_w, window_height, true);
   mpg_ovr_btn.SetCallback(AppTask::GetCurrent());
 
   // *** Run / Stop — larger font, uppercase, same width as home screen ***
-  int32_t run_stop_w = 2 * (int32_t)aux_btn_w + BORDER_W; // 154px
+  // Derived from the screen width, NOT from aux_btn_w. With three aux buttons
+  // aux_btn_w is 101, so "2 * aux_btn_w + BORDER_W" would give 206 each and
+  // overflow the 320 px display.
+  int32_t run_stop_w = (scr_w - 3 * BORDER_W) / 2; // 154px
 
   run_btn.SetParams("RUN", BORDER_W, run_stop_y, run_stop_w, window_height, true);
   run_btn.SetFont(Font_12x16::GetInstance());
@@ -108,11 +108,32 @@ Result OverrideCtrlScr::Setup(int32_t y, int32_t height)
   content_start          = nav_end + padding + BORDER_W * 2;
   axis_dro_y             = content_start + BORDER_W + name_h;
   int32_t axis_dro_end   = axis_dro_y + axis_dro_h;
-  int32_t feed_start_y   = axis_dro_end + BORDER_W * 3;
+  int32_t ovr_start_y    = axis_dro_end + BORDER_W * 3;
 
-  // *** Feed override ***
-  feed_dw.SetParams(scr_w / 4, feed_start_y,
-                    (scr_w - scr_w / 4 - BORDER_W) / 2, window_height, 3u, 0u);
+  // *** Spindle speed override - TOP row ***
+  // Laid out first so the feed row below can derive its position from it.
+  speed_dw.SetParams(scr_w / 4, ovr_start_y,
+                     (scr_w - scr_w / 4 - BORDER_W) / 2, window_height, 3u, 0u);
+  speed_dw.SetBorder(BORDER_W, COLOR_RED);
+  speed_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
+  speed_dw.SetNumber(0);
+  speed_dw.SetUnits("%", DataWindow::RIGHT);
+  speed_dw.SetCallback(AppTask::GetCurrent());
+  speed_dw.SetActive(true);
+  // "SPEED:" not "SPINDLE:" so this matches the Font_12x16 of "FEED:" below it.
+  // The label is centred in the 0..scr_w/4 strip (80 px): at 12 px/char
+  // "SPEED:" is 72 px and centres at x = 4, while "SPINDLE:" would be 96 px and
+  // start at x = -8, running off the left edge.
+  speed_name.SetParams("SPEED:", 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
+  speed_name.Move((speed_dw.GetStartX() / 2) - (speed_name.GetWidth() / 2),
+                  (speed_dw.GetStartY() + (int32_t)speed_dw.GetHeight() / 2) - (speed_name.GetHeight() / 2));
+  speed_reset_btn.SetParams("100%", speed_dw.GetEndX() + BORDER_W, speed_dw.GetStartY(),
+                             scr_w - speed_dw.GetEndX() - BORDER_W * 2, speed_dw.GetHeight(), true);
+  speed_reset_btn.SetCallback(AppTask::GetCurrent());
+
+  // *** Feed override - BOTTOM row ***
+  feed_dw.SetParams(speed_dw.GetStartX(), speed_dw.GetEndY() + BORDER_W * 2,
+                    speed_dw.GetWidth(), speed_dw.GetHeight(), 3u, 0u);
   feed_dw.SetBorder(BORDER_W, COLOR_RED);
   feed_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
   feed_dw.SetNumber(0);
@@ -125,22 +146,6 @@ Result OverrideCtrlScr::Setup(int32_t y, int32_t height)
   feed_reset_btn.SetParams("100%", feed_dw.GetEndX() + BORDER_W, feed_dw.GetStartY(),
                             scr_w - feed_dw.GetEndX() - BORDER_W * 2, feed_dw.GetHeight(), true);
   feed_reset_btn.SetCallback(AppTask::GetCurrent());
-
-  // *** Power override ***
-  speed_dw.SetParams(feed_dw.GetStartX(), feed_dw.GetEndY() + BORDER_W * 2,
-                     feed_dw.GetWidth(), feed_dw.GetHeight(), 3u, 0u);
-  speed_dw.SetBorder(BORDER_W, COLOR_RED);
-  speed_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
-  speed_dw.SetNumber(0);
-  speed_dw.SetUnits("%", DataWindow::RIGHT);
-  speed_dw.SetCallback(AppTask::GetCurrent());
-  speed_dw.SetActive(true);
-  speed_name.SetParams("POWER:", 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
-  speed_name.Move((speed_dw.GetStartX() / 2) - (speed_name.GetWidth() / 2),
-                  (speed_dw.GetStartY() + (int32_t)speed_dw.GetHeight() / 2) - (speed_name.GetHeight() / 2));
-  speed_reset_btn.SetParams("100%", speed_dw.GetEndX() + BORDER_W, speed_dw.GetStartY(),
-                             scr_w - speed_dw.GetEndX() - BORDER_W * 2, speed_dw.GetHeight(), true);
-  speed_reset_btn.SetCallback(AppTask::GetCurrent());
 
   return Result::RESULT_OK;
 }
@@ -189,12 +194,11 @@ Result OverrideCtrlScr::Show()
   hdr_state.Show(101);
   hdr_status_sub.Show(101);
 
-  flood_btn.Show(100);
-  mist_btn.Show(100);
-  fire_ovr_btn.SetString("FIRE");
-  fire_ovr_btn.SetColor(COLOR_WHITE);
-  fire_active = false;
-  fire_ovr_btn.Show(100);
+  vac_btn.Show(100);
+  spindle_ovr_btn.SetString("SPINDLE");
+  spindle_ovr_btn.SetColor(COLOR_WHITE);
+  spindle_on = false;
+  spindle_ovr_btn.Show(100);
   mpg_ovr_btn.Show(100);
 
   run_btn.Show(100);
@@ -234,9 +238,8 @@ Result OverrideCtrlScr::Hide()
   hdr_state.Hide();
   hdr_status_sub.Hide();
 
-  flood_btn.Hide();
-  mist_btn.Hide();
-  fire_ovr_btn.Hide();
+  vac_btn.Hide();
+  spindle_ovr_btn.Hide();
   mpg_ovr_btn.Hide();
 
   run_btn.Hide();
@@ -266,9 +269,8 @@ Result OverrideCtrlScr::TimerExpired(uint32_t interval)
   feed_dw.SetNumber(grbl_comm.GetFeedOverride());
   speed_dw.SetNumber(grbl_comm.GetSpeedOverride());
 
-  flood_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
-  mist_btn.SetColor(grbl_comm.GetCoolantMist() ? COLOR_GREEN : COLOR_WHITE);
-  fire_ovr_btn.SetColor(fire_active ? COLOR_RED : COLOR_WHITE);
+  vac_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
+  spindle_ovr_btn.SetColor(spindle_on ? COLOR_RED : COLOR_WHITE);
 
   if(grbl_comm.GetMpgModeRequest())
     mpg_ovr_btn.SetColor(grbl_comm.GetMpgMode() ? COLOR_GREEN : COLOR_RED);
@@ -343,34 +345,25 @@ Result OverrideCtrlScr::ProcessCallback(const void* ptr)
   {
     grbl_comm.SpeedReset();
   }
-  else if(ptr == &flood_btn)
+  else if(ptr == &vac_btn)
   {
-    grbl_comm.CoolantFloodToggle(); // AIR = M8
+    grbl_comm.CoolantFloodToggle(); // VAC = M8
   }
-  else if(ptr == &mist_btn)
+  else if(ptr == &spindle_ovr_btn)
   {
-    grbl_comm.CoolantMistToggle(); // EXHAUST = M7
-  }
-  else if(ptr == &fire_ovr_btn)
-  {
+    // Identical to the home screen. See MillConfig.h for the speed.
     bool was_in_control = grbl_comm.GetMpgModeRequest();
     if(!was_in_control) grbl_comm.GainControl();
     uint32_t id = 0u;
-    if(!fire_active)
+    if(!spindle_on)
     {
-      grbl_comm.CoolantFloodToggle();
-      grbl_comm.CoolantMistToggle();
-      grbl_comm.SendCmd("$32=0\r", id);
-      grbl_comm.SendCmd("M3 S30\r", id);
-      fire_active = true;
+      grbl_comm.SendCmd(SPINDLE_ON_CMD, id);
+      spindle_on = true;
     }
     else
     {
-      grbl_comm.SendCmd("M5\r", id);
-      grbl_comm.SendCmd("$32=1\r", id);
-      grbl_comm.CoolantFloodToggle();
-      grbl_comm.CoolantMistToggle();
-      fire_active = false;
+      grbl_comm.SendCmd(SPINDLE_OFF_CMD, id);
+      spindle_on = false;
     }
     if(!was_in_control) grbl_comm.ReleaseControl();
   }

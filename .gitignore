@@ -42,3 +42,7 @@ Release
 *.out
 *.app
 *.launch
+
+# Mill build tree - keep only the flashable hex (see mill branch)
+build-mill/*
+!build-mill/SmartPendant_1.0.0.hex

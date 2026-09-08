@@ -1,8 +1,8 @@
 //******************************************************************************
 //  @file DirectControlScr.cpp
-//  @author Nicolai Shlapunov / JPB Laser modifications
+//  @author Nicolai Shlapunov / JPB PCB Mill modifications
 //
-//  @details Full-screen home layout for laser pendant.
+//  @details Full-screen home layout for the PCB mill pendant.
 //           Hides the global Application header and status bar on Show()
 //           and restores them on Hide(). All navigation, status, and
 //           machine controls are self-contained in this screen.
@@ -11,6 +11,7 @@
 
 #include "DirectControlScr.h"
 #include "Application.h"
+#include "MillConfig.h"
 
 // *****************************************************************************
 DirectControlScr& DirectControlScr::GetInstance()
@@ -93,7 +94,7 @@ Result DirectControlScr::Setup(int32_t y, int32_t height)
     scale_btn[i].SetPressed(false);
     scale_btn[i].SetColor(COLOR_WHITE);
   }
-  scale_btn[3u].SetPressed(true); // default 0.500mm
+  scale_btn[1u].SetPressed(true); // default 0.0010" - the step that jogs smoothly at $120=100
 
   // *** Navigation bar: prev_btn | status | next_btn ***
   int32_t arrow_w  = scr_w - dw[0].GetEndX() - BORDER_W * 2; // = zero_btn width = 51
@@ -113,26 +114,25 @@ Result DirectControlScr::Setup(int32_t y, int32_t height)
                             nav_y + (int32_t)window_height - Font_8x12::GetInstance().GetCharH() - BORDER_W / 2,
                             COLOR_WHITE, Font_8x12::GetInstance());
 
-  // *** Aux button row: AIR | EXHAUST | FIRE | MPG ***
+  // *** Aux button row: VAC | SPINDLE | MPG ***
   int32_t aux_y = scale_btn[0].GetEndY() + BORDER_W;
 
-  spindle_ctrl_btn.SetParams("AIR", BORDER_W, aux_y, scale_btn_w, window_height, true);
-  spindle_ctrl_btn.SetCallback(AppTask::GetCurrent());
+  vac_btn.SetParams("VAC", BORDER_W, aux_y, scale_btn_w, window_height, true);
+  vac_btn.SetCallback(AppTask::GetCurrent());
 
-  spindle_dir_btn.SetParams("EXHAUST", BORDER_W + (int32_t)scale_btn_w + BORDER_W,
-                            aux_y, scale_btn_w, window_height, true);
-  spindle_dir_btn.SetCallback(AppTask::GetCurrent());
+  spindle_btn.SetParams("SPINDLE", BORDER_W + (int32_t)scale_btn_w + BORDER_W,
+                        aux_y, scale_btn_w, window_height, true);
+  spindle_btn.SetCallback(AppTask::GetCurrent());
 
-  fire_btn.SetParams("FIRE", BORDER_W + 2 * ((int32_t)scale_btn_w + BORDER_W),
-                     aux_y, scale_btn_w, window_height, true);
-  fire_btn.SetCallback(AppTask::GetCurrent());
-
-  mpg_home_btn.SetParams("MPG", BORDER_W + 3 * ((int32_t)scale_btn_w + BORDER_W),
+  mpg_home_btn.SetParams("MPG", BORDER_W + 2 * ((int32_t)scale_btn_w + BORDER_W),
                           aux_y, scale_btn_w, window_height, true);
   mpg_home_btn.SetCallback(AppTask::GetCurrent());
 
-  // *** Bottom row: RUN | STOP (each 2 aux buttons wide, larger font) ***
-  int32_t run_stop_w = 2 * (int32_t)scale_btn_w + BORDER_W; // 154
+  // *** Bottom row: RUN | STOP (half the screen each, larger font) ***
+  // Derived from the screen width, NOT from scale_btn_w. With three scale
+  // buttons scale_btn_w is 101, so the old "2 * scale_btn_w + BORDER_W" would
+  // give 206 each and overflow the 320 px display.
+  int32_t run_stop_w = (scr_w - 3 * BORDER_W) / 2; // 154
   int32_t run_stop_y = aux_y + (int32_t)window_height + BORDER_W;
 
   run_btn.SetParams("RUN", BORDER_W, run_stop_y, run_stop_w, window_height, true);
@@ -177,12 +177,11 @@ Result DirectControlScr::Show()
   for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++) dw[i].SetSelected(false);
 
   // Aux row
-  spindle_ctrl_btn.Show(100); // AIR
-  spindle_dir_btn.Show(100);  // EXHAUST
-  fire_btn.SetString("FIRE");
-  fire_btn.SetColor(COLOR_WHITE);
-  fire_active = false;
-  fire_btn.Show(100);
+  vac_btn.Show(100); // VAC (M8)
+  spindle_btn.SetString("SPINDLE");
+  spindle_btn.SetColor(COLOR_WHITE);
+  spindle_on = false;
+  spindle_btn.Show(100);
   mpg_home_btn.Show(100);
 
   // Bottom row
@@ -220,9 +219,8 @@ Result DirectControlScr::Hide()
   x_mode_btn.Hide();
   x_mode_str.Hide();
 
-  spindle_ctrl_btn.Hide();
-  spindle_dir_btn.Hide();
-  fire_btn.Hide();
+  vac_btn.Hide();
+  spindle_btn.Hide();
   mpg_home_btn.Hide();
   run_btn.Hide();
   stop_btn.Hide();
@@ -276,12 +274,11 @@ Result DirectControlScr::TimerExpired(uint32_t interval)
     }
   }
 
-  // AIR button color (M8 = CoolantFlood)
-  spindle_ctrl_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
-  // EXHAUST button color (M7 = CoolantMist)
-  spindle_dir_btn.SetColor(grbl_comm.GetCoolantMist() ? COLOR_GREEN : COLOR_WHITE);
-  // FIRE button color
-  fire_btn.SetColor(fire_active ? COLOR_RED : COLOR_WHITE);
+  // VAC button color (M8 = CoolantFlood). State comes from the controller, so
+  // this stays correct even if flood is toggled from telnet or a G-code program.
+  vac_btn.SetColor(grbl_comm.GetCoolantFlood() ? COLOR_GREEN : COLOR_WHITE);
+  // SPINDLE button color
+  spindle_btn.SetColor(spindle_on ? COLOR_RED : COLOR_WHITE);
 
   // MPG button color
   if(grbl_comm.GetMpgModeRequest())
@@ -313,16 +310,16 @@ Result DirectControlScr::TimerExpired(uint32_t interval)
   {
     x_mode_btn.Enable();
     for(uint32_t i = 0u; i < NumberOf(zero_btn); i++) zero_btn[i].Enable();
-    spindle_ctrl_btn.Enable();
-    spindle_dir_btn.Enable();
+    vac_btn.Enable();
+    spindle_btn.Enable();
   }
   else
   {
     change_box.Hide();
     x_mode_btn.Disable();
     for(uint32_t i = 0u; i < NumberOf(zero_btn); i++) zero_btn[i].Disable();
-    spindle_ctrl_btn.Disable();
-    spindle_dir_btn.Disable();
+    vac_btn.Disable();
+    spindle_btn.Disable();
   }
 
   return result;
@@ -375,26 +372,23 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
       grbl_comm.Stop();
     }
   }
-  else if(ptr == &fire_btn)
+  else if(ptr == &spindle_btn)
   {
+    // Plain M3/M5. The laser version also toggled both coolants and flipped
+    // $32 in and out of laser mode; none of that applies here - $32 is already
+    // 0 on this machine and the vacuum is controlled by its own button.
     bool was_in_control = grbl_comm.GetMpgModeRequest();
     if(!was_in_control) grbl_comm.GainControl();
     uint32_t id = 0u;
-    if(!fire_active)
+    if(!spindle_on)
     {
-      grbl_comm.CoolantFloodToggle();
-      grbl_comm.CoolantMistToggle();
-      grbl_comm.SendCmd("$32=0\r", id);
-      grbl_comm.SendCmd("M3 S30\r", id);
-      fire_active = true;
+      grbl_comm.SendCmd(SPINDLE_ON_CMD, id);
+      spindle_on = true;
     }
     else
     {
-      grbl_comm.SendCmd("M5\r", id);
-      grbl_comm.SendCmd("$32=1\r", id);
-      grbl_comm.CoolantFloodToggle();
-      grbl_comm.CoolantMistToggle();
-      fire_active = false;
+      grbl_comm.SendCmd(SPINDLE_OFF_CMD, id);
+      spindle_on = false;
     }
     if(!was_in_control) grbl_comm.ReleaseControl();
   }
@@ -403,13 +397,9 @@ Result DirectControlScr::ProcessCallback(const void* ptr)
     if(change_box.GetResult())
       grbl_comm.SetAxisPosition(change_box.GetId(), change_box.GetValue());
   }
-  else if(ptr == &spindle_ctrl_btn)
+  else if(ptr == &vac_btn)
   {
-    grbl_comm.CoolantFloodToggle(); // AIR = M8
-  }
-  else if(ptr == &spindle_dir_btn)
-  {
-    grbl_comm.CoolantMistToggle(); // EXHAUST = M7
+    grbl_comm.CoolantFloodToggle(); // VAC = M8
   }
   else
   {
@@ -496,9 +486,13 @@ void DirectControlScr::UpdateScaleButtons()
   {
     memset(scale_str[i], 0, NumberOf(scale_str[i]));
 
-    // Fixed laser jog scale values: 0.005, 0.010, 0.100, 0.500
-    static const uint32_t laser_scale[4] = {5u, 10u, 100u, 500u};
-    scale_val[i] = laser_scale[i];
+    // Fixed jog scale values, in 1/scaler units. The imperial scaler is 10000
+    // (0.0001"), so these render as 0.0005 / 0.0010 / 0.0020 inch.
+    // Kept small deliberately: each detent is one $J= increment, and at
+    // $120=100 mm/s^2 a coarse step becomes a visible lurch rather than
+    // smooth motion. Revisit if acceleration is raised.
+    static const uint32_t mill_scale[NumberOf(scale_btn)] = {5u, 10u, 20u};
+    scale_val[i] = mill_scale[i];
     grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]),
       scale_val[i], grbl_comm.GetReportUnitsScaler(GrblComm::AXIS_X),
       grbl_comm.GetReportUnits(GrblComm::AXIS_X), false);

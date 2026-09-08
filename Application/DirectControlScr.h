@@ -1,8 +1,8 @@
 //******************************************************************************
 //  @file DirectControlScr.h
-//  @author Nicolai Shlapunov / JPB Laser modifications
+//  @author Nicolai Shlapunov / JPB PCB Mill modifications
 //
-//  @details DirectControlScr: Laser home screen - full screen self-contained layout
+//  @details DirectControlScr: Mill home screen - full screen self-contained layout
 //
 //******************************************************************************
 
@@ -54,7 +54,7 @@ class DirectControlScr : public IScreen
     String   x_mode_str;
 
     // Scale buttons
-    UiButton scale_btn[4u];
+    UiButton scale_btn[3u];
     char     scale_str[NumberOf(scale_btn)][12u] = {0};
     uint32_t scale_val[NumberOf(scale_btn)]      = {0};
 
@@ -64,14 +64,14 @@ class DirectControlScr : public IScreen
     String   hdr_state;       // machine state text
     String   hdr_status_sub;  // machine status sub-text
 
-    // Aux button row: AIR | EXHAUST | FIRE | MPG
-    UiButton spindle_ctrl_btn; // AIR  (M8)
-    UiButton spindle_dir_btn;  // EXHAUST (M7)
-    UiButton fire_btn;         // FIRE test
+    // Aux button row: VAC | SPINDLE | MPG
+    UiButton vac_btn;          // VAC - dust collector (M8, coolant flood)
+    UiButton spindle_btn;      // Spindle on/off (M3/M5)
     UiButton mpg_home_btn;     // MPG toggle
 
-    // Fire state
-    bool fire_active = false;
+    // Spindle state. Tracked locally because grblHAL reports spindle state only
+    // in the full status report, which this screen does not request.
+    bool spindle_on = false;
 
     // Bottom row
     UiButton run_btn;   // Run / Hold

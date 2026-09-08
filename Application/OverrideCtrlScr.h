@@ -54,12 +54,11 @@ class OverrideCtrlScr : public IScreen
     String hdr_state;
     String hdr_status_sub;
 
-    // Aux row: AIR | EXHAUST | FIRE | MPG
-    UiButton flood_btn;    // AIR   (M8)
-    UiButton mist_btn;     // EXHAUST (M7)
-    UiButton fire_ovr_btn; // FIRE test
-    UiButton mpg_ovr_btn;  // MPG toggle
-    bool     fire_active = false;
+    // Aux row: VAC | SPINDLE | MPG - kept identical to DirectControlScr
+    UiButton vac_btn;         // VAC - dust collector (M8, coolant flood)
+    UiButton spindle_ovr_btn; // Spindle on/off (M3/M5)
+    UiButton mpg_ovr_btn;     // MPG toggle
+    bool     spindle_on = false;
 
     // Bottom row
     UiButton run_btn;
